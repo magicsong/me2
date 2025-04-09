@@ -27,10 +27,19 @@ export interface PersistenceService<T> {
   create(data: Partial<T>): Promise<T>;
   createMany(data: Partial<T>[]): Promise<T[]>;
   get(id: string | number): Promise<T | null>;
-  getAll(userId: string): Promise<T[]>;
+  getAll(userId?: string): Promise<T[]>;
   update(id: string | number, data: Partial<T>): Promise<T>;
   updateMany(updates: { id: string | number; data: Partial<T> }[]): Promise<T[]>;
   delete(id: string | number): Promise<boolean>;
+  
+  // 可选的分页方法
+  getPage?(page: number, pageSize: number, userId?: string): Promise<{
+      items: T[];
+      total: number;
+  }>;
+  
+  // 可选的根据用户ID获取方法
+  getByUserId?(userId: string): Promise<T[]>;
 }
 
 /**

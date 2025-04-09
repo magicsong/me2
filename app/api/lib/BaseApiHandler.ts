@@ -190,4 +190,101 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
         const llmResponse = await callLLMOnce(prompt, context, cacheKey);
         return llmResponse.content as string;
     }
+
+    /**
+     * 根据ID获取单个资源
+     */
+    async getById(id: string): Promise<BO | null> {
+        try {
+            const item = await this.getExistingData(id);
+            return item ? this.toBusinessObject(item) : null;
+        } catch (error) {
+            console.error(`获取${this.resourceName()}失败:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * 获取所有资源
+     * @param userId 可选的用户ID过滤
+     */
+    async getAll(userId?: string): Promise<BO[]> {
+        try {
+            let items: T[];
+            if (userId && typeof this.persistenceService.getByUserId === 'function') {
+                items = await this.persistenceService.getByUserId(userId);
+            } else {
+                items = await this.persistenceService.getAll(userId);
+            }
+            return this.toBusinessObjects(items);
+        } catch (error) {
+            console.error(`获取所有${this.resourceName()}失败:`, error);
+            return [];
+        }
+    }
+
+    /**
+     * 分页获取资源
+     * @param page 页码，从1开始
+     * @param pageSize 每页大小
+     * @param userId 可选的用户ID过滤
+     */
+    async getPage(page: number = 1, pageSize: number = 10, userId?: string): Promise<{
+        items: BO[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+    }> {
+        try {
+            // 确保页码有效
+            page = Math.max(1, page);
+            pageSize = Math.max(1, Math.min(100, pageSize)); // 限制每页大小
+
+            // 获取总数量
+            let total = 0;
+            let items: T[] = [];
+
+            // 如果持久化服务支持分页
+            if (typeof this.persistenceService.getPage === 'function') {
+                const result = await this.persistenceService.getPage(page, pageSize, userId);
+                items = result.items;
+                total = result.total;
+            } else {
+                // 降级处理：获取所有项目然后手动分页
+                items = userId && typeof this.persistenceService.getByUserId === 'function'
+                    ? await this.persistenceService.getByUserId(userId)
+                    : await this.persistenceService.getAll(userId);
+                
+                total = items.length;
+                
+                // 手动分页
+                const startIndex = (page - 1) * pageSize;
+                items = items.slice(startIndex, startIndex + pageSize);
+            }
+
+            // 计算总页数
+            const totalPages = Math.ceil(total / pageSize);
+
+            // 转换为业务对象
+            const boItems = this.toBusinessObjects(items);
+
+            return {
+                items: boItems,
+                total,
+                page,
+                pageSize,
+                totalPages
+            };
+        } catch (error) {
+            console.error(`分页获取${this.resourceName()}失败:`, error);
+            return {
+                items: [],
+                total: 0,
+                page,
+                pageSize,
+                totalPages: 0
+            };
+        }
+    }
 }

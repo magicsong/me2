@@ -1,7 +1,8 @@
 import { PersistenceService, PromptBuilder, OutputParser } from '@/app/api/lib/types';
-import { frequency, habits, status } from '@/lib/db/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { frequency, habits, status, habit_entries } from '@/lib/db/schema';
+import { eq, desc, sql, and } from 'drizzle-orm';
 import { db } from '../db';
+import { format } from 'date-fns';
 
 // 习惯类型定义
 export type Habit = typeof habits.$inferInsert
@@ -68,6 +69,45 @@ export class HabitPersistenceService implements PersistenceService<Habit> {
       .orderBy(desc(habits.created_at));
     
     return results as Habit[];
+  }
+
+  // 获取用户所有习惯，并包含今日打卡状态
+  async getAllWithTodayCheckIns(userId: string): Promise<Habit[]> {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    
+    // 首先获取所有习惯
+    const userHabits = await this.db
+      .select()
+      .from(habits)
+      .where(eq(habits.user_id, userId))
+      .orderBy(desc(habits.created_at));
+
+    // 然后获取今天的所有打卡记录
+    const todayEntries = await this.db
+      .select()
+      .from(habit_entries)
+      .where(
+        and(
+          eq(habit_entries.user_id, userId),
+          sql`DATE(${habit_entries.completed_at}) = ${today}`
+        )
+      );
+
+    // 创建一个打卡记录的查找映射
+    const todayCheckInMap = new Map();
+    todayEntries.forEach(entry => {
+      todayCheckInMap.set(entry.habit_id, true);
+    });
+
+    // 为每个习惯添加打卡状态
+    const habitsWithCheckIns = userHabits.map(habit => {
+      return {
+        ...habit,
+        todayCheckedIn: todayCheckInMap.has(habit.id)
+      };
+    });
+    
+    return habitsWithCheckIns as Habit[];
   }
 
   // 更新习惯

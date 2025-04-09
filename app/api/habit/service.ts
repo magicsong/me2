@@ -26,6 +26,11 @@ export class HabitApiHandler extends BaseApiHandler<Habit, HabitBO> {
       return false;
     }
 
+    // 验证奖励点数
+    if (data.reward_points !== undefined && (isNaN(data.reward_points) || data.reward_points < 0)) {
+      return false;
+    }
+
     return true;
   }
 
@@ -50,6 +55,66 @@ export class HabitApiHandler extends BaseApiHandler<Habit, HabitBO> {
     return this.persistenceService as HabitPersistenceService;
   }
 
+  // 打卡功能
+  async checkIn(habitId: string, date: string): Promise<HabitBO> {
+    const habit = await this.getExistingData(habitId);
+    
+    // 如果没有check_ins字段，初始化它
+    if (!habit.check_ins) {
+      habit.check_ins = {};
+    }
+    
+    // 添加或更新打卡记录
+    habit.check_ins[date] = true;
+    
+    const updatedHabit = await this.persistenceService.update(habitId, { check_ins: habit.check_ins });
+    return this.toBusinessObject(updatedHabit);
+  }
+
+  // 取消打卡功能
+  async cancelCheckIn(habitId: string, date: string): Promise<HabitBO> {
+    const habit = await this.getExistingData(habitId);
+    
+    // 如果已经存在check_ins并且有指定日期的记录，则删除它
+    if (habit.check_ins && habit.check_ins[date]) {
+      delete habit.check_ins[date];
+      
+      const updatedHabit = await this.persistenceService.update(habitId, { check_ins: habit.check_ins });
+      return this.toBusinessObject(updatedHabit);
+    }
+    
+    return this.toBusinessObject(habit);
+  }
+
+  // 获取用户所有习惯的打卡统计
+  async getCheckInStats(userId: string): Promise<any> {
+    const habits = await this.persistenceService.getByUserId(userId);
+    
+    const stats = {
+      totalCheckins: 0,
+      totalPoints: 0,
+      streaks: {},
+      habitStats: {}
+    };
+    
+    habits.forEach(habit => {
+      const checkins = habit.check_ins || {};
+      const checkinDates = Object.keys(checkins);
+      
+      stats.habitStats[habit.id] = {
+        name: habit.name,
+        category: habit.category,
+        totalCheckins: checkinDates.length,
+        points: checkinDates.length * (habit.reward_points || 1)
+      };
+      
+      stats.totalCheckins += checkinDates.length;
+      stats.totalPoints += stats.habitStats[habit.id].points;
+    });
+    
+    return stats;
+  }
+
   // 实现业务对象和数据对象转换方法
   toBusinessObject(dataObject: Habit): HabitBO {
     return {
@@ -59,9 +124,11 @@ export class HabitApiHandler extends BaseApiHandler<Habit, HabitBO> {
       frequency: dataObject.frequency,
       createdAt: dataObject.created_at,
       userId: dataObject.user_id,
-      category: dataObject.category,
-      rewardPoints: dataObject.reward_points,
-      status: dataObject.status
+      category: dataObject.category || 'productivity', // 提供默认值
+      rewardPoints: dataObject.reward_points || 0, // 确保有默认值
+      status: dataObject.status,
+      checkIns: dataObject.check_ins || {},
+      todayCheckedIn: dataObject.todayCheckedIn || false // 添加今日打卡状态
     };
   }
 
@@ -74,8 +141,9 @@ export class HabitApiHandler extends BaseApiHandler<Habit, HabitBO> {
       created_at: businessObject.createdAt,
       user_id: businessObject.userId,
       category: businessObject.category,
-      reward_points: businessObject.rewardPoints,
-      status: businessObject.status
+      reward_points: businessObject.rewardPoints || 0, // 确保有默认值
+      status: businessObject.status,
+      check_ins: businessObject.checkIns
     };
   }
 
