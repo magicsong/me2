@@ -43,7 +43,7 @@ const data = {
   navMain: [
     {
       title: "Dashboard",
-      url: "#",
+      url: "/dashboard",
       icon: IconDashboard,
     },
     {
@@ -170,9 +170,28 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavDocuments items={data.documents} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        {/* Ensure NavMain renders links with correct href */}
+        <NavMain
+          items={data.navMain.map((item) => ({
+            ...item,
+            onClick: () => (window.location.href = item.url), // Add click handler
+          }))}
+        />
+        {/* Ensure NavDocuments renders links with correct href */}
+        <NavDocuments
+          items={data.documents.map((item) => ({
+            ...item,
+            onClick: () => (window.location.href = item.url), // Add click handler
+          }))}
+        />
+        {/* Ensure NavSecondary renders links with correct href */}
+        <NavSecondary
+          items={data.navSecondary.map((item) => ({
+            ...item,
+            onClick: () => (window.location.href = item.url), // Add click handler
+          }))}
+          className="mt-auto"
+        />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />

@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { HabitEntryService } from '@/lib/persist/habit-entry';
 import { db } from '@/lib/db';
 import { habit_challenge_tiers } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { getCurrentUserId } from '@/lib/utils';
 
 // 获取习惯的所有挑战阶梯
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
-    }
+    const userId = await getCurrentUserId()
 
     const { searchParams } = new URL(request.url);
     const habitId = searchParams.get('habitId');
@@ -40,10 +36,7 @@ export async function GET(request: NextRequest) {
 // 创建或更新习惯挑战阶梯
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
-    }
+    const userId = await getCurrentUserId()
 
     const { habitId, name, level, description, rewardPoints, completionCriteria } = await request.json();
     

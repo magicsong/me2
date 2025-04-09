@@ -502,13 +502,15 @@ function SidebarMenuButton({
   size = "default",
   tooltip,
   className,
+  href, // 新增 href 属性
   ...props
 }: React.ComponentProps<"button"> & {
   asChild?: boolean
   isActive?: boolean
   tooltip?: string | React.ComponentProps<typeof TooltipContent>
+  href?: string // 新增 href 类型
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
-  const Comp = asChild ? Slot : "button"
+  const Comp = asChild ? Slot : href ? "a" : "button" // 如果有 href，则使用 <a> 标签
   const { isMobile, state } = useSidebar()
 
   const button = (
@@ -518,6 +520,7 @@ function SidebarMenuButton({
       data-size={size}
       data-active={isActive}
       className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+      href={href} // 绑定 href 属性
       {...props}
     />
   )

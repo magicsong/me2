@@ -1,12 +1,22 @@
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { DataTable } from "@/components/data-table"
 import { SectionCards } from "@/components/section-cards"
+import { DailyQuote } from "@/components/daily-quote"
+import { HabitStats } from "@/components/habit-stats"
+import { DailySummary } from "@/components/daily-summary"
 
 import data from "./data.json"
 
 export default function Page() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="px-4 lg:px-6 grid grid-cols-2 gap-4">
+        <DailyQuote />
+        <HabitStats />
+      </div>
+      <div className="px-4 lg:px-6">
+        <DailySummary />
+      </div>
       <SectionCards />
       <div className="px-4 lg:px-6">
         <ChartAreaInteractive />
