@@ -50,22 +50,7 @@ const data = {
       title: "Habits",
       url: "/habits",
       icon: IconCalendar,
-    },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: IconChartBar,
-    },
-    {
-      title: "Projects",
-      url: "#",
-      icon: IconFolder,
-    },
-    {
-      title: "Team",
-      url: "#",
-      icon: IconUsers,
-    },
+    }
   ],
   navClouds: [
     {
