@@ -18,6 +18,7 @@ import {
   IconSettings,
   IconUsers,
   IconCalendar,
+  IconSun,
 } from "@tabler/icons-react"
 
 import { NavDocuments } from "@/components/nav-documents"
@@ -41,6 +42,11 @@ const data = {
     avatar: "/avatars/shadcn.jpg",
   },
   navMain: [
+    {
+      title: "Daily",
+      url: "/daily",
+      icon: IconSun,
+    },
     {
       title: "Dashboard",
       url: "/dashboard",

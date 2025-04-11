@@ -1,4 +1,6 @@
+import { PgDatabase } from 'drizzle-orm/pg-core';
 import { NextRequest, NextResponse } from 'next/server';
+import { BaseRepository, FilterCondition as RepoFilterCondition, PaginationOptions } from '@/lib/db/base';
 
 /**
  * 基础请求接口
@@ -53,29 +55,99 @@ export interface FilterOptions {
   limit?: number;                  // 限制结果数量
   offset?: number;                 // 结果偏移量
 }
-
 /**
  * 持久化服务接口
  */
 export interface PersistenceService<T> {
+  /**
+   * 创建单个记录
+   */
   create(data: Partial<T>): Promise<T>;
+  
+  /**
+   * 批量创建记录
+   */
   createMany(data: Partial<T>[]): Promise<T[]>;
-  get(id: string | number): Promise<T | null>;
+  
+  /**
+   * 根据ID获取记录，兼容旧名称
+   * @deprecated 使用 findById 替代
+   */
+  get?(id: string | number): Promise<T | null>;
+  
+  /**
+   * 根据ID获取记录
+   */
+  findById(id: string | number): Promise<T | null>;
+  
+  /**
+   * 获取所有记录
+   */
   getAll(userId?: string): Promise<T[]>;
+  
+  /**
+   * 根据过滤条件获取单条记录
+   */
+  findOne?(filter: RepoFilterCondition<T>): Promise<T | null>;
+  
+  /**
+   * 根据过滤条件获取多条记录
+   */
+  findMany?(filter: RepoFilterCondition<T>): Promise<T[]>;
+  
+  /**
+   * 更新记录
+   */
   update(id: string | number, data: Partial<T>): Promise<T>;
+  
+  /**
+   * 批量更新记录
+   */
   updateMany(updates: { id: string | number; data: Partial<T> }[]): Promise<T[]>;
-  delete(id: string | number): Promise<boolean>;
   
-  // 可选的分页方法
-  getPage?(page: number, pageSize: number, userId?: string): Promise<{
-      items: T[];
-      total: number;
-  }>;
+  /**
+   * 删除记录
+   */
+  delete(id: string | number): Promise<T>;
   
-  // 可选的根据用户ID获取方法
+  /**
+   * 批量删除记录
+   */
+  deleteMany?(filter: RepoFilterCondition<T>): Promise<T[]>;
+  
+  /**
+   * 通过用户ID获取记录
+   */
   getByUserId?(userId: string): Promise<T[]>;
   
-  // 新增：通用过滤方法，支持复杂查询条件
+  /**
+   * 分页获取记录
+   */
+  getPage?(page: number, pageSize: number, userId?: string): Promise<{
+    items: T[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }>;
+  
+  /**
+   * 基于分页选项获取记录
+   */
+  findWithPagination?(
+    filter: RepoFilterCondition<T>,
+    options: PaginationOptions
+  ): Promise<{
+    data: T[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }>;
+  
+  /**
+   * 通用过滤方法
+   */
   getWithFilters?(
     filters: FilterOptions,
     userId?: string
@@ -85,7 +157,9 @@ export interface PersistenceService<T> {
     metadata?: Record<string, any>;
   }>;
   
-  // 新增：带分页的通用过滤方法
+  /**
+   * 带分页的通用过滤方法
+   */
   getPageWithFilters?(
     page: number,
     pageSize: number,
