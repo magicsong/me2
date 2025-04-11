@@ -3,16 +3,20 @@ import { PersistenceService } from "@/app/api/lib/types";
 import { AIInsightDO, AIInsightBO } from "./types";
 import { AIInsightPromptBuilder } from "./promptBuilder";
 import { AIInsightOutputParser } from "./outputParser";
+import { AIInsightPersistenceService } from "./persistence";
 
 export class AIInsightHandler extends BaseApiHandler<AIInsightDO, AIInsightBO> {
   constructor(
-    persistenceService: PersistenceService<AIInsightDO>,
-    promptBuilder: AIInsightPromptBuilder,
-    outputParser: AIInsightOutputParser
+    persistenceService?: PersistenceService<AIInsightDO>,
+    promptBuilder?: AIInsightPromptBuilder,
+    outputParser?: AIInsightOutputParser
   ) {
-    super(persistenceService, promptBuilder, outputParser);
+    super(
+      persistenceService || new AIInsightPersistenceService(),
+      promptBuilder || new AIInsightPromptBuilder(),
+      outputParser || new AIInsightOutputParser()
+    );
   }
-
   protected validateInput(data: any): boolean {
     // 基本验证
     if (!data) return false;
@@ -97,7 +101,10 @@ export class AIInsightHandler extends BaseApiHandler<AIInsightDO, AIInsightBO> {
   async getAllWithFilters(userId: string, filters: Record<string, any> = {}): Promise<AIInsightBO[]> {
     try {
       // 调用持久化服务的getWithFilters方法，不使用分页
-      const result = await (this.persistenceService as any).getWithFilters(null, null, userId, filters);
+      if (!this.persistenceService.getWithFilters) {
+        return [];
+      }
+      const result = await this.persistenceService.getWithFilters(filters, userId);
       return this.toBusinessObjects(result.items);
     } catch (error) {
       console.error(`获取所有${this.resourceName()}失败:`, error);
@@ -121,12 +128,21 @@ export class AIInsightHandler extends BaseApiHandler<AIInsightDO, AIInsightBO> {
     totalPages: number;
   }> {
     try {
+      if (!this.persistenceService.getPageWithFilters) {
+        return {
+          items: [],
+          total: 0,
+          page,
+          pageSize,
+          totalPages: 0
+        };
+      }
       // 确保页码有效
       page = Math.max(1, page);
       pageSize = Math.max(1, Math.min(100, pageSize));
 
       // 调用持久化服务的getWithFilters方法，使用分页
-      const result = await (this.persistenceService as any).getWithFilters(page, pageSize, userId, filters);
+      const result = await this.persistenceService.getPageWithFilters(page, pageSize, filters, userId);
       
       // 计算总页数
       const totalPages = Math.ceil(result.total / pageSize);

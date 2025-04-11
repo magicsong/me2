@@ -1,5 +1,5 @@
 import { callLLMOnce } from '@/lib/langchain/chains';
-import { BaseRequest, BaseResponse, BusinessObject, ObjectConverter, OutputParser, PersistenceService, PromptBuilder } from './types';
+import { BaseRequest, BaseResponse, BusinessObject, FilterOptions, ObjectConverter, OutputParser, PersistenceService, PromptBuilder } from './types';
 
 /**
  * 通用API处理基类，处理创建和更新操作
@@ -192,6 +192,52 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
     }
 
     /**
+     * 简化版调用LLM生成内容方法，不需要指定提示
+     * 会自动使用promptBuilder.build()方法获取提示
+     */
+    protected async generateContent(context?: any): Promise<Partial<T>> {
+        try {
+            // 检查promptBuilder是否实现了build方法
+            if (typeof this.promptBuilder.build !== 'function') {
+                throw new Error('promptBuilder未实现build方法');
+            }
+            
+            // 检查outputParser是否实现了parse方法
+            if (typeof this.outputParser.parse !== 'function') {
+                throw new Error('outputParser未实现parse方法');
+            }
+            
+            // 获取通用提示
+            const prompt = this.promptBuilder.build();
+            
+            // 生成内容
+            const cacheKey = this.resourceName() + "-zero-param-" + JSON.stringify(context || {});
+            const llmResponse = await callLLMOnce(prompt, context || {}, cacheKey);
+            
+            // 解析内容
+            return this.outputParser.parse(llmResponse.content as string);
+        } catch (error) {
+            console.error('生成内容失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 创建处理器的静态工厂方法
+     * @param options 可选的创建选项
+     */
+    static create<T, B extends BusinessObject>(
+        options?: {
+            persistenceService?: PersistenceService<T>,
+            promptBuilder?: PromptBuilder<T>,
+            outputParser?: OutputParser<T>
+        }
+    ): BaseApiHandler<T, B> {
+        // 这里需要由子类实现，返回具体的处理器实例
+        throw new Error('子类必须实现create方法');
+    }
+
+    /**
      * 根据ID获取单个资源
      */
     async getById(id: string): Promise<BO | null> {
@@ -278,6 +324,113 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
             };
         } catch (error) {
             console.error(`分页获取${this.resourceName()}失败:`, error);
+            return {
+                items: [],
+                total: 0,
+                page,
+                pageSize,
+                totalPages: 0
+            };
+        }
+    }
+
+    /**
+     * 使用过滤器获取资源
+     * @param filters 过滤选项
+     * @param userId 可选的用户ID
+     */
+    async getWithFilters(filters: FilterOptions, userId?: string): Promise<{
+        items: BO[];
+        total: number;
+        metadata?: Record<string, any>;
+    }> {
+        try {
+            // 检查持久化服务是否支持过滤查询
+            if (typeof this.persistenceService.getWithFilters !== 'function') {
+                throw new Error(`${this.resourceName()}持久化服务不支持过滤查询`);
+            }
+
+            const result = await this.persistenceService.getWithFilters(filters, userId);
+            
+            return {
+                items: this.toBusinessObjects(result.items),
+                total: result.total,
+                metadata: result.metadata
+            };
+        } catch (error) {
+            console.error(`过滤查询${this.resourceName()}失败:`, error);
+            return {
+                items: [],
+                total: 0
+            };
+        }
+    }
+
+    /**
+     * 分页获取并过滤资源
+     * @param page 页码，从1开始
+     * @param pageSize 每页大小
+     * @param filters 过滤选项
+     * @param userId 可选的用户ID
+     */
+    async getPageWithFilters(
+        page: number = 1,
+        pageSize: number = 10,
+        filters: FilterOptions,
+        userId?: string
+    ): Promise<{
+        items: BO[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+        metadata?: Record<string, any>;
+    }> {
+        try {
+            // 确保页码有效
+            page = Math.max(1, page);
+            pageSize = Math.max(1, Math.min(100, pageSize));
+
+            // 检查持久化服务是否支持分页过滤查询
+            if (typeof this.persistenceService.getPageWithFilters === 'function') {
+                const result = await this.persistenceService.getPageWithFilters(
+                    page, pageSize, filters, userId
+                );
+                
+                return {
+                    items: this.toBusinessObjects(result.items),
+                    total: result.total,
+                    page: result.page,
+                    pageSize: result.pageSize,
+                    totalPages: result.totalPages,
+                    metadata: result.metadata
+                };
+            }
+            
+            // 降级处理：使用不分页的过滤查询然后手动分页
+            if (typeof this.persistenceService.getWithFilters === 'function') {
+                const result = await this.persistenceService.getWithFilters(filters, userId);
+                const total = result.total;
+                const totalPages = Math.ceil(total / pageSize);
+                
+                // 手动应用分页
+                const startIndex = (page - 1) * pageSize;
+                const paginatedItems = result.items.slice(startIndex, startIndex + pageSize);
+                
+                return {
+                    items: this.toBusinessObjects(paginatedItems),
+                    total,
+                    page,
+                    pageSize,
+                    totalPages,
+                    metadata: result.metadata
+                };
+            }
+            
+            // 如果两种过滤方法都不支持，则抛出错误
+            throw new Error(`${this.resourceName()}持久化服务不支持过滤查询`);
+        } catch (error) {
+            console.error(`分页过滤查询${this.resourceName()}失败:`, error);
             return {
                 items: [],
                 total: 0,

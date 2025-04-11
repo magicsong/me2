@@ -7,6 +7,7 @@ import { BaseRequest, BaseResponse } from '@/app/api/lib/types';
 import { AIInsightBO } from './types';
 import { getCurrentUserId } from '@/lib/utils';
 
+
 // 初始化服务和处理器
 const persistenceService = new AIInsightPersistenceService();
 const promptBuilder = new AIInsightPromptBuilder();
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
 
 // POST请求处理（创建）
 export async function POST(request: NextRequest) {
-  const { userId } = auth();
+  const userId = await getCurrentUserId()
   if (!userId) {
     return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
   }
@@ -105,10 +106,10 @@ export async function POST(request: NextRequest) {
 
 // PUT请求处理（更新）
 export async function PUT(request: NextRequest) {
-  const { userId } = auth();
-  if (!userId) {
-    return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
-  }
+  const userId = await getCurrentUserId()
+    if (!userId) {
+      return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
+    }
 
   try {
     const body = await request.json();
