@@ -204,7 +204,7 @@ export const todos = pgTable("todos", {
 // Todo与标签的关联表
 export const todo_tag_relations = pgTable("todo_tag_relations", {
 	todo_id: integer("todo_id").notNull().references(() => todos.id, { onDelete: 'cascade' }),
-	tag_id: integer("tag_id").notNull().references(() => pomodoro_tags.id, { onDelete: 'cascade' }),
+	tag_id: integer("tag_id").notNull().references(() => tags.id, { onDelete: 'cascade' }),
 },
 	(table) => {
 		return {
@@ -259,6 +259,8 @@ export const notes = pgTable("notes", {
 export const tags = pgTable("tags", {
 	id: serial("id").primaryKey(),
 	name: varchar("name", { length: 100 }).notNull(),
+	color: varchar("color", { length: 50 }),
+	kind:  varchar("kind", { length: 50 }),
 	userId: varchar("user_id", { length: 255 }).notNull(),
 }, (table) => {
 	return {

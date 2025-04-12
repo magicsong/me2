@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     
     const searchParams = req.nextUrl.searchParams;
     const id = searchParams.get('id');
-    const date = searchParams.get('date');
+    const planedDate = searchParams.get('date');
     
     // 如果提供了 ID，获取特定的待办事项
     if (id) {
@@ -35,9 +35,9 @@ export async function GET(req: NextRequest) {
     }
     
     // 如果提供了日期参数，获取该日期的待办事项
-    if (date) {
+    if (planedDate) {
       const handler = todoHandler as TodoApiHandler;
-      const todos = await handler.getTodosByDate(date, userId);
+      const todos = await handler.getTodosByDate(planedDate, userId);
       return NextResponse.json({ success: true, data: todos });
     }
     

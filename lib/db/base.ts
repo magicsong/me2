@@ -23,6 +23,19 @@ export interface PaginationOptions {
     sortOrder?: SortOrder;
 }
 
+// 钩子类型定义
+export interface RepositoryHooks<T> {
+    beforeCreate?: (data: Partial<T>) => Promise<Partial<T>> | Partial<T>;
+    afterCreate?: (data: T) => Promise<T> | T;
+    beforeUpdate?: (id: any, data: Partial<T>) => Promise<Partial<T>> | Partial<T>;
+    afterUpdate?: (data: T) => Promise<T> | T;
+    beforeDelete?: (id: any) => Promise<boolean> | boolean;
+    afterDelete?: (data: T) => Promise<T> | T;
+    beforeQuery?: (filter: FilterCondition<T>) => Promise<FilterCondition<T>> | FilterCondition<T>;
+    afterQuery?: (data: T | T[] | null) => Promise<T | T[] | null> | T | T[] | null;
+    afterPagination?: (result: PaginatedResult<T>) => Promise<PaginatedResult<T>> | PaginatedResult<T>;
+}
+
 // 过滤条件
 export type FilterCondition<T> = Partial<{
     [K in keyof T]: T[K] | { eq?: T[K]; neq?: T[K]; gt?: T[K]; gte?: T[K]; lt?: T[K]; lte?: T[K]; in?: T[K][]; like?: string }
@@ -33,41 +46,71 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
     protected db: NodePgDatabase;
     protected table: T;
     protected primaryKey: keyof I;
+    protected hooks: RepositoryHooks<I>;
 
     constructor(table: T, primaryKey: keyof I = 'id' as keyof I) {
         this.db = db;
         this.table = table;
         this.primaryKey = primaryKey;
+        this.hooks = {};
     }
 
     getDb() {
         return this.db;
     }
+
+    // 设置钩子
+    setHooks(hooks: Partial<RepositoryHooks<I>>): void {
+        this.hooks = { ...this.hooks, ...hooks };
+    }
+
     // 创建记录
     async create(data: Partial<I>): Promise<I> {
-        const result = await this.db.insert(this.table).values(data as any).returning();
-        return result[0] as I;
+        let processedData = data;
+        if (this.hooks.beforeCreate) {
+            processedData = await Promise.resolve(this.hooks.beforeCreate(data));
+        }
+
+        const result = await this.db.insert(this.table).values(processedData as any).returning();
+        let createdData = result[0] as I;
+
+        if (this.hooks.afterCreate) {
+            createdData = await Promise.resolve(this.hooks.afterCreate(createdData));
+        }
+
+        return createdData;
     }
 
     // 批量创建记录
     async createMany(data: Partial<I>[]): Promise<I[]> {
-        const result = await this.db.insert(this.table).values(data as any).returning();
-        return result as I[];
+        let processedData = [...data];
+        
+        if (this.hooks.beforeCreate) {
+            processedData = await Promise.all(
+                processedData.map(item => Promise.resolve(this.hooks.beforeCreate!(item)))
+            );
+        }
+
+        const result = await this.db.insert(this.table).values(processedData as any).returning();
+        let createdData = result as I[];
+
+        if (this.hooks.afterCreate) {
+            createdData = await Promise.all(
+                createdData.map(item => Promise.resolve(this.hooks.afterCreate!(item)))
+            );
+        }
+
+        return createdData;
     }
 
     // 通过ID查找记录
     async findById(id: any): Promise<I | null> {
-        const result = await this.db
-            .select()
-            .from(this.table)
-            .where(eq(this.table[this.primaryKey as string] as any, id))
-            .limit(1);
+        let filter = { [this.primaryKey]: id } as FilterCondition<I>;
+        
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
 
-        return result.length > 0 ? (result[0] as I) : null;
-    }
-
-    // 查找单条记录
-    async findOne(filter: FilterCondition<I>): Promise<I | null> {
         const condition = this.buildWhereCondition(filter);
         const result = await this.db
             .select()
@@ -75,20 +118,56 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
             .where(condition)
             .limit(1);
 
-        // 清除可能的循环引用，返回纯数据对象
-        return result.length > 0 ? this.purifyResult(result[0]) : null;
+        let data = result.length > 0 ? this.purifyResult(result[0]) : null;
+
+        if (this.hooks.afterQuery && data) {
+            data = await Promise.resolve(this.hooks.afterQuery(data) as I | null);
+        }
+
+        return data;
+    }
+
+    // 查找单条记录
+    async findOne(filter: FilterCondition<I>): Promise<I | null> {
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
+
+        const condition = this.buildWhereCondition(filter);
+        const result = await this.db
+            .select()
+            .from(this.table)
+            .where(condition)
+            .limit(1);
+
+        let data = result.length > 0 ? this.purifyResult(result[0]) : null;
+
+        if (this.hooks.afterQuery && data) {
+            data = await Promise.resolve(this.hooks.afterQuery(data) as I | null);
+        }
+
+        return data;
     }
 
     // 查找多条记录
     async findMany(filter: FilterCondition<I> = {}): Promise<I[]> {
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
+
         const condition = this.buildWhereCondition(filter);
         const result = await this.db
             .select()
             .from(this.table)
             .where(condition);
 
-        // 清除可能的循环引用，返回纯数据对象数组
-        return this.purifyResults(result);
+        let data = this.purifyResults(result);
+
+        if (this.hooks.afterQuery) {
+            data = await Promise.resolve(this.hooks.afterQuery(data) as I[]);
+        }
+
+        return data;
     }
 
     // 分页查询
@@ -96,11 +175,14 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
         filter: FilterCondition<I> = {},
         options: PaginationOptions = {}
     ): Promise<PaginatedResult<I>> {
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
+
         const { page = 1, pageSize = 10, sortBy, sortOrder = 'asc' } = options;
         const offset = (page - 1) * pageSize;
         const condition = this.buildWhereCondition(filter);
 
-        // 计算总数
         const countResult = await this.db
             .select({ count: SQL`count(*)` })
             .from(this.table)
@@ -108,7 +190,6 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
 
         const total = Number(countResult[0].count);
 
-        // 构建排序
         let query = this.db
             .select()
             .from(this.table)
@@ -124,59 +205,120 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
             );
         }
 
-        const data = await query;
+        const resultData = await query;
+        let data = this.purifyResults(resultData);
 
-        return {
-            data: this.purifyResults(data),
+        if (this.hooks.afterQuery) {
+            data = await Promise.resolve(this.hooks.afterQuery(data) as I[]);
+        }
+
+        let result: PaginatedResult<I> = {
+            data,
             total,
             page,
             pageSize,
             totalPages: Math.ceil(total / pageSize),
         };
+
+        if (this.hooks.afterPagination) {
+            result = await Promise.resolve(this.hooks.afterPagination(result));
+        }
+
+        return result;
     }
 
     // 更新记录
     async update(id: any, data: Partial<I>): Promise<I | null> {
+        let processedData = { ...data };
+        
+        if (this.hooks.beforeUpdate) {
+            processedData = await Promise.resolve(this.hooks.beforeUpdate(id, processedData));
+        }
+
         const result = await this.db
             .update(this.table)
-            .set(data as any)
+            .set(processedData as any)
             .where(eq(this.table[this.primaryKey as string] as any, id))
             .returning();
 
-        return result.length > 0 ? (result[0] as I) : null;
+        let updatedData = result.length > 0 ? (result[0] as I) : null;
+
+        if (this.hooks.afterUpdate && updatedData) {
+            updatedData = await Promise.resolve(this.hooks.afterUpdate(updatedData));
+        }
+
+        return updatedData;
     }
 
     // 批量更新记录
     async updateMany(filter: FilterCondition<I>, data: Partial<I>): Promise<I[]> {
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
+
+        let processedData = { ...data };
+        // 批量更新没有单独的beforeUpdate钩子，因为没有具体ID
+
         const condition = this.buildWhereCondition(filter);
         const result = await this.db
             .update(this.table)
-            .set(data as any)
+            .set(processedData as any)
             .where(condition)
             .returning();
 
-        return result as I[];
+        let updatedData = result as I[];
+
+        if (this.hooks.afterUpdate) {
+            updatedData = await Promise.all(
+                updatedData.map(item => Promise.resolve(this.hooks.afterUpdate!(item)))
+            );
+        }
+
+        return updatedData;
     }
 
     // 删除记录
     async delete(id: any): Promise<I | null> {
+        if (this.hooks.beforeDelete) {
+            const shouldProceed = await Promise.resolve(this.hooks.beforeDelete(id));
+            if (!shouldProceed) return null;
+        }
+
         const result = await this.db
             .delete(this.table)
             .where(eq(this.table[this.primaryKey as string] as any, id))
             .returning();
 
-        return result.length > 0 ? (result[0] as I) : null;
+        let deletedData = result.length > 0 ? (result[0] as I) : null;
+
+        if (this.hooks.afterDelete && deletedData) {
+            deletedData = await Promise.resolve(this.hooks.afterDelete(deletedData));
+        }
+
+        return deletedData;
     }
 
     // 批量删除记录
     async deleteMany(filter: FilterCondition<I>): Promise<I[]> {
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
+
         const condition = this.buildWhereCondition(filter);
         const result = await this.db
             .delete(this.table)
             .where(condition)
             .returning();
 
-        return result as I[];
+        let deletedData = result as I[];
+
+        if (this.hooks.afterDelete) {
+            deletedData = await Promise.all(
+                deletedData.map(item => Promise.resolve(this.hooks.afterDelete!(item)))
+            );
+        }
+
+        return deletedData;
     }
 
     // 构建where条件

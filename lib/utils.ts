@@ -36,3 +36,12 @@ export async function getCurrentUserId() {
   }
   return session.user.id;
 }
+
+export function convertToMidnight(timeString: string): Date {
+  const date = new Date(timeString);
+  if (isNaN(date.getTime())) {
+      throw new Error("Invalid date string");
+  }
+  date.setHours(0, 0, 0, 0); // 本地时区 0 点
+  return date;
+}

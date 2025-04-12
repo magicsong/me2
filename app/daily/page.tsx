@@ -7,13 +7,13 @@ import { DailyPlanning } from "@/components/daily-start/daily-planning";
 import { DailyTimelineView } from "@/components/daily-timeline-view";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Todo, TodoWithTags, PomodoroSession } from "@/components/todolist-container";
 import { toast } from "sonner";
+import { TodoBO } from "../api/todo/types";
 
 export default function DailyStartPage() {
   const [showWelcome, setShowWelcome] = useState(true);
-  const [todos, setTodos] = useState<TodoWithTags[]>([]);
-  const [todosYesterday, setTodosYesterday] = useState<TodoWithTags[]>([]);
+  const [todos, setTodos] = useState<TodoBO[]>([]);
+  const [todosYesterday, setTodosYesterday] = useState<TodoBO[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [pomodoroSessions, setPomodoroSessions] = useState<PomodoroSession[]>([]);
   const [activeTab, setActiveTab] = useState("planning");
@@ -46,7 +46,8 @@ export default function DailyStartPage() {
       const result = await response.json();
       
       if (result.success) {
-        setTodos(result.data);
+        console.log(result.data)
+        setTodos(result.data as TodoBO[]);
       } else {
         console.error('获取待办事项失败:', result.error);
         toast.error("获取待办事项失败");

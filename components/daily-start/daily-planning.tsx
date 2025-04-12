@@ -1,25 +1,23 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TodoPriority } from "@/components/daily-start/todo-priority";
 import { TodoItem } from "@/components/daily-start/todo-item";
-import { TodoWithTags, Todo } from "@/components/todolist-container";
-import { Badge } from "@/components/ui/badge";
-import { 
-  SunIcon, 
-  ClockIcon, 
-  ArrowRightIcon, 
+import { DailyPlanningSteps } from "@/components/daily-start/daily-planning-steps";
+import {
+  SunIcon,
+  ClockIcon,
   CalendarIcon,
   CheckIcon,
   XIcon
 } from "lucide-react";
 import { toast } from "sonner";
+import { TodoBO } from "@/app/api/todo/types";
 
 interface DailyPlanningProps {
-  todos: TodoWithTags[];
-  yesterdayTodos: TodoWithTags[];
+  todos: TodoBO[];
+  yesterdayTodos: TodoBO[];
   onUpdateTodo: (todo: Todo) => Promise<boolean>;
   onBatchUpdateTodos: (todos: Todo[]) => Promise<boolean>;
   onChangeTab: () => void;
@@ -32,24 +30,27 @@ export function DailyPlanning({
   onBatchUpdateTodos,
   onChangeTab
 }: DailyPlanningProps) {
-  const [dailyIntention, setDailyIntention] = useState("");
   const [selectedTodos, setSelectedTodos] = useState<number[]>([]);
   const [activeTab, setActiveTab] = useState("yesterday");
 
   // 过滤未完成的昨日任务
   const incompleteTodos = yesterdayTodos.filter(
-    ({ todo }) => todo.status !== "completed"
+    (todo) => todo.status !== "completed"
   );
 
   // 获取今日任务的分类统计
-  const todayStats = {
-    total: todos.length,
-    completed: todos.filter(({ todo }) => todo.status === "completed").length,
-    urgent: todos.filter(({ todo }) => todo.priority === "urgent").length,
-    important: todos.filter(({ todo }) => todo.priority === "high").length,
-    normal: todos.filter(({ todo }) => todo.priority === "medium").length,
-    low: todos.filter(({ todo }) => todo.priority === "low").length
-  };
+  let todayStats = {}
+  if (todos.length > 0) {
+    todayStats = {
+      total: todos.length,
+      completed: todos.filter((todo) => todo.status === "completed").length,
+      urgent: todos.filter((todo) => todo.priority === "urgent").length,
+      important: todos.filter((todo) => todo.priority === "high").length,
+      normal: todos.filter((todo) => todo.priority === "medium").length,
+      low: todos.filter((todo) => todo.priority === "low").length
+    };
+  }
+
 
   function handleSelectTodo(todoId: number, selected: boolean) {
     if (selected) {
@@ -155,34 +156,8 @@ export function DailyPlanning({
 
   return (
     <div className="space-y-6">
-      {/* 今日意图卡片 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <SunIcon className="h-5 w-5 text-yellow-500" />
-            今日意图
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <Textarea
-              placeholder="今天我想要..."
-              value={dailyIntention}
-              onChange={(e) => setDailyIntention(e.target.value)}
-              className="min-h-[100px]"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={handleSaveDailyIntention}>
-                保存意图
-              </Button>
-              <Button onClick={handleStartFocusing}>
-                开始专注
-                <ArrowRightIcon className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* 每日规划步骤组件 */}
+      <DailyPlanningSteps onStartFocusing={handleStartFocusing} />
 
       {/* 待办事项管理 */}
       <Card>
@@ -209,14 +184,14 @@ export function DailyPlanning({
               {incompleteTodos.length > 0 ? (
                 <>
                   <div className="flex justify-between items-center mb-4">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={handleSelectAll}
                     >
                       {selectedTodos.length === incompleteTodos.length ? "取消全选" : "全选"}
                     </Button>
-                    
+
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
@@ -249,11 +224,11 @@ export function DailyPlanning({
                   </div>
 
                   <div className="space-y-2">
-                    {incompleteTodos.map(({ todo, tags }) => (
+                    {incompleteTodos.map((todo) => (
                       <TodoItem
                         key={todo.id}
                         todo={todo}
-                        tags={tags}
+                        tags={todo.tags}
                         selected={selectedTodos.includes(todo.id)}
                         onSelect={(selected) => handleSelectTodo(todo.id, selected)}
                         onUpdate={onUpdateTodo}
@@ -306,14 +281,14 @@ export function DailyPlanning({
               {todos.length > 0 ? (
                 <>
                   <div className="flex justify-between items-center mb-4">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={handleSelectAll}
                     >
                       {selectedTodos.length === todos.length ? "取消全选" : "全选"}
                     </Button>
-                    
+
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
@@ -355,11 +330,11 @@ export function DailyPlanning({
                   </div>
 
                   <div className="space-y-2">
-                    {todos.map(({ todo, tags }) => (
+                    {todos.map((todo) => (
                       <TodoItem
                         key={todo.id}
                         todo={todo}
-                        tags={tags}
+                        tags={todo.tags}
                         selected={selectedTodos.includes(todo.id)}
                         onSelect={(selected) => handleSelectTodo(todo.id, selected)}
                         onUpdate={onUpdateTodo}

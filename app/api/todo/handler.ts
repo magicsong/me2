@@ -3,6 +3,7 @@ import { BaseApiHandler } from '../lib/BaseApiHandler';
 import { BusinessObject } from '../lib/types';
 import { TodoPromptBuilder, TodoOutputParser } from './prompt';
 import { TodoData, TodoBO, TodoWithTags } from './types';
+import { convertToMidnight } from '@/lib/utils';
 
 export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
   protected validateInput(data: any): boolean {
@@ -93,8 +94,9 @@ export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
       if (typeof todoService.getByDate !== 'function') {
         throw new Error('持久化服务不支持按日期获取待办事项');
       }
-      
-      const todos = await todoService.getByDate(date, userId);
+      // 将date转换为当天0点
+      const zeroDate = convertToMidnight(date)
+      const todos = await todoService.getByDate(zeroDate, userId);
       return this.toBusinessObjects(todos);
     } catch (error) {
       console.error('获取日期待办事项失败:', error);

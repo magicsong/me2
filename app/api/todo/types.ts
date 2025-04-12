@@ -32,11 +32,6 @@ export interface TodoBO extends BusinessObject {
   createdAt: string;
   updatedAt: string;
   tagIds?: number[];
-}
-
-// Todo 包含标签的业务对象
-export interface TodoWithTags {
-  todo: TodoData;
   tags: { id: number; name: string; color: string }[];
 }
 
