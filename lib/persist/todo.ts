@@ -28,7 +28,7 @@ export interface TodoWithTags {
  */
 export class TodoPersistenceService extends BasePersistenceService<typeof todos, TodoData> {
   constructor(connectionString?: string) {
-    super(db, todos, 'id', 'user_id');
+    super(todos);
   }
 
   /**

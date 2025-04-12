@@ -1,6 +1,6 @@
+import { TodoPersistenceService } from '@/lib/persist/todo';
 import { BaseApiHandler } from '../lib/BaseApiHandler';
 import { BusinessObject } from '../lib/types';
-import { TodoPersistenceService } from './service';
 import { TodoPromptBuilder, TodoOutputParser } from './prompt';
 import { TodoData, TodoBO, TodoWithTags } from './types';
 
@@ -25,7 +25,7 @@ export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
   }
 
   protected async getExistingData(id: string): Promise<TodoData> {
-    const todo = await this.persistenceService.getById(id);
+    const todo = await this.persistenceService.findById(id);
     
     if (!todo) {
       throw new Error(`未找到 ID 为 ${id} 的待办事项`);

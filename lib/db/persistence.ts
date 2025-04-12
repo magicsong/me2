@@ -15,18 +15,16 @@ export class BasePersistenceService<
   
   /**
    * 创建基础持久化服务
-   * @param db 数据库连接
    * @param table 表对象
    * @param primaryKey 主键字段名，默认为'id'
    * @param userIdField 用户ID字段名，默认为'user_id'
    */
   constructor(
-    db: NodePgDatabase, 
     table: T, 
     primaryKey: keyof I = 'id' as keyof I,
     protected userIdField: keyof I = 'user_id' as keyof I
   ) {
-    super(db, table, primaryKey);
+    super(table, primaryKey);
   }
 
   /**

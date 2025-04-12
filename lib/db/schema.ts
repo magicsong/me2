@@ -189,6 +189,9 @@ export const todos = pgTable("todos", {
 	created_at: timestamp("created_at", { mode: 'string', withTimezone: true }).defaultNow().notNull(),
 	updated_at: timestamp("updated_at", { mode: 'string', withTimezone: true }).defaultNow().notNull(),
 	completed_at: timestamp("completed_at", { mode: 'string', withTimezone: true }),
+	planned_date: timestamp("planned_date", { mode: 'string', withTimezone: true }),
+	planned_start_time: timestamp("planned_start_time", { mode: 'string', withTimezone: true }),
+	planned_end_time: timestamp("planned_end_time", { mode: 'string', withTimezone: true }),
 },
 	(table) => {
 		return {
