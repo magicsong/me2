@@ -390,10 +390,15 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
 
         for (const [key, value] of Object.entries(filter)) {
             if (value === null || value === undefined) continue;
+            
+            // 检查字段是否存在于表结构中
+            if (!(key in this.table)) {
+                throw new Error(`字段 ${key} 在表 ${this.table.name} 中不存在`);
+            }
 
             if (typeof value === 'object' && !Array.isArray(value)) {
                 const complexFilter = value as any;
-
+                
                 if (complexFilter.eq !== undefined) {
                     conditions.push(eq(this.table[key] as any, complexFilter.eq));
                 }

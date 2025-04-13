@@ -1,6 +1,6 @@
 import { tags, todo_tag_relations, todos } from '@/lib/db/schema';
 import { eq, inArray } from 'drizzle-orm';
-import { BasePersistenceService } from '../db/persistence';
+import { BaseRepository } from '../db';
 
 // Todo数据类型定义
 export type TodoData = typeof todos.$inferSelect & {
@@ -30,7 +30,7 @@ export interface TodoWithTags {
 /**
  * Todo持久化服务
  */
-export class TodoPersistenceService extends BasePersistenceService<typeof todos, TodoData> {
+export class TodoPersistenceService extends BaseRepository<typeof todos, TodoData> {
   constructor(connectionString?: string) {
     super(todos);
 

@@ -671,6 +671,17 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
     }
     
     /**
+     * 转换字段名称，从API层命名方式到数据库层命名方式
+     * 默认实现是将小驼峰转为下划线方式
+     * 子类可以覆盖此方法提供自定义转换逻辑
+     * @param fieldName API层的字段名
+     * @returns 数据库层的字段名
+     */
+    protected convertFieldName(fieldName: string): string {
+        return fieldName.replace(/([A-Z])/g, '_$1').toLowerCase();
+    }
+
+    /**
      * 转换API过滤条件为持久层过滤条件
      * @param filters API过滤选项
      * @returns 持久层过滤条件
@@ -679,47 +690,55 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
         const result: FilterCondition<T> = {} as FilterCondition<T>;
         if (filters.conditions && filters.conditions.length > 0) {
             for (const condition of filters.conditions) {
+                // 转换字段名
+                const dbFieldName = this.convertFieldName(condition.field);
+                
                 // 处理eq操作符，这会覆盖之前的任何条件
                 if (condition.operator === 'eq') {
-                    result[condition.field] = condition.value;
+                    result[dbFieldName] = condition.value;
                     continue;
                 }
                 
                 // 处理其他操作符
                 // 如果字段尚未初始化或不是对象，需要初始化为对象
-                if (!result[condition.field] || typeof result[condition.field] !== 'object') {
+                if (!result[dbFieldName] || typeof result[dbFieldName] !== 'object') {
                     // 如果已经有值，它是一个简单值（eq操作符的结果），记录警告
-                    if (result[condition.field] !== undefined) {
-                        console.warn(`字段 ${condition.field} 已有等于条件，添加 ${condition.operator} 条件可能导致意外结果`);
+                    if (result[dbFieldName] !== undefined) {
+                        console.warn(`字段 ${dbFieldName} 已有等于条件，添加 ${condition.operator} 条件可能导致意外结果`);
                     }
-                    result[condition.field] = {};
+                    result[dbFieldName] = {};
                 }
                 
                 // 根据操作符设置条件
                 switch (condition.operator) {
                     case 'neq':
-                        result[condition.field].ne = condition.value;
+                        result[dbFieldName].neq = condition.value;
                         break;
                     case 'gt':
-                        result[condition.field].gt = condition.value;
+                        result[dbFieldName].gt = condition.value;
                         break;
                     case 'gte':
-                        result[condition.field].gte = condition.value;
+                        result[dbFieldName].gte = condition.value;
                         break;
                     case 'lt':
-                        result[condition.field].lt = condition.value;
+                        result[dbFieldName].lt = condition.value;
                         break;
                     case 'lte':
-                        result[condition.field].lte = condition.value;
+                        result[dbFieldName].lte = condition.value;
                         break;
                     case 'like':
-                        result[condition.field].like = condition.value;
+                        result[dbFieldName].like = condition.value;
                         break;
                     case 'in':
-                        result[condition.field].in = condition.value;
+                        result[dbFieldName].in = condition.value;
                         break;
                 }
             }
+        }
+        
+        // 处理排序字段
+        if (filters.sortBy) {
+            result.sortBy = this.convertFieldName(filters.sortBy);
         }
         
         return result;
