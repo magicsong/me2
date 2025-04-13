@@ -11,3 +11,4 @@ export const db = drizzle(pool);
 export { BaseRepository, BasePersistenceService };
 export * from './base';
 export * from './persistence';
+export * from './intf';

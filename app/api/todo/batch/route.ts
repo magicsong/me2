@@ -3,21 +3,6 @@ import { TodoApiHandler } from '../handler';
 import { BatchTodoRequest, TodoBO } from '../types';
 import { getCurrentUserId } from '@/lib/utils';
 
-// 批量更新单个字段的请求接口
-interface BatchUpdateFieldRequest {
-  field: string;
-  todos: {
-    id: string;
-    value: any;
-  }[];
-}
-
-// 批量更新状态的请求接口
-interface BatchUpdateStatusRequest {
-  status: boolean;
-  todoIds: string[];
-}
-
 // 创建 TodoApiHandler 实例
 const todoHandler = TodoApiHandler.create() as TodoApiHandler;
 

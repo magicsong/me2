@@ -1,15 +1,37 @@
-import { PgDatabase } from 'drizzle-orm/pg-core';
-import { NextRequest, NextResponse } from 'next/server';
-import { BaseRepository, FilterCondition as RepoFilterCondition, PaginationOptions } from '@/lib/db/base';
-
 /**
- * 基础请求接口
+ * 基础请求接口 - 处理单个对象
  */
 export interface BaseRequest<T> {
-  data?: T | T[]; // 单条或批量数据
+  data?: T; // 单条数据 - 不再支持数组
   autoGenerate?: boolean; // 是否需要LLM自动生成
   batchSize?: number; // 自动生成时的批量大小
   userPrompt?: string; // 用户给大模型的提示
+}
+
+/**
+ * 批量请求基础接口 - 专门处理批量操作
+ */
+export interface BaseBatchRequest<T> {
+  data: T[]; // 批量数据 - 必须是数组
+  autoGenerate?: boolean; // 是否需要LLM自动生成
+  batchSize?: number; // 自动生成时的批量大小
+  userPrompt?: string; // 用户给大模型的提示
+}
+
+/**
+ * Patch 请求接口 - 用于精确更新指定字段
+ */
+export interface PatchRequest<T> {
+  id: string | number;            // 必需: 要更新的资源ID
+  userId?: string;                // 可选: 用户ID限制，确保只更新该用户的资源
+  fields: Partial<T>;             // 要更新的字段集合
+}
+
+// BatchPatchRequest 会统一更新所有对象的某个字段，比如置为成功无效等等
+export interface BatchPatchRequest<T> {
+  id: string[] | number[];            // 必需: 要更新的资源ID
+  userId?: string;                // 可选: 用户ID限制，确保只更新该用户的资源
+  fields: Partial<T>;             // 要更新的字段集合
 }
 
 /**
@@ -25,7 +47,7 @@ export interface BaseResponse<T> {
 /**
  * 通用过滤器类型，支持基本操作符
  */
-export type FilterOperator = 
+export type FilterOperator =
   | 'eq'     // 等于
   | 'neq'    // 不等于
   | 'gt'     // 大于
@@ -34,7 +56,6 @@ export type FilterOperator =
   | 'lte'    // 小于等于
   | 'like'   // 模糊匹配
   | 'in'     // 在列表中
-  | 'between'; // 在范围内
 
 /**
  * 单个过滤条件
@@ -56,126 +77,6 @@ export interface FilterOptions {
   offset?: number;                 // 结果偏移量
 }
 /**
- * 持久化服务接口
- */
-export interface PersistenceService<T> {
-  /**
-   * 创建单个记录
-   */
-  create(data: Partial<T>): Promise<T>;
-  
-  /**
-   * 批量创建记录
-   */
-  createMany(data: Partial<T>[]): Promise<T[]>;
-  
-  /**
-   * 根据ID获取记录，兼容旧名称
-   * @deprecated 使用 findById 替代
-   */
-  get?(id: string | number): Promise<T | null>;
-  
-  /**
-   * 根据ID获取记录
-   */
-  findById(id: string | number): Promise<T | null>;
-  
-  /**
-   * 获取所有记录
-   */
-  getAll(userId?: string): Promise<T[]>;
-  
-  /**
-   * 根据过滤条件获取单条记录
-   */
-  findOne?(filter: RepoFilterCondition<T>): Promise<T | null>;
-  
-  /**
-   * 根据过滤条件获取多条记录
-   */
-  findMany?(filter: RepoFilterCondition<T>): Promise<T[]>;
-  
-  /**
-   * 更新记录
-   */
-  update(id: string | number, data: Partial<T>): Promise<T>;
-  
-  /**
-   * 批量更新记录
-   */
-  updateMany(filter: RepoFilterCondition<T>, data: Partial<T>): Promise<T[]>;
-  
-  /**
-   * 删除记录
-   */
-  delete(id: string | number): Promise<T>;
-  
-  /**
-   * 批量删除记录
-   */
-  deleteMany?(filter: RepoFilterCondition<T>): Promise<T[]>;
-  
-  /**
-   * 通过用户ID获取记录
-   */
-  getByUserId?(userId: string): Promise<T[]>;
-  
-  /**
-   * 分页获取记录
-   */
-  getPage?(page: number, pageSize: number, userId?: string): Promise<{
-    items: T[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-  }>;
-  
-  /**
-   * 基于分页选项获取记录
-   */
-  findWithPagination?(
-    filter: RepoFilterCondition<T>,
-    options: PaginationOptions
-  ): Promise<{
-    data: T[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-  }>;
-  
-  /**
-   * 通用过滤方法
-   */
-  getWithFilters?(
-    filters: FilterOptions,
-    userId?: string
-  ): Promise<{
-    items: T[];
-    total: number;
-    metadata?: Record<string, any>;
-  }>;
-  
-  /**
-   * 带分页的通用过滤方法
-   */
-  getPageWithFilters?(
-    page: number,
-    pageSize: number,
-    filters: FilterOptions,
-    userId?: string
-  ): Promise<{
-    items: T[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-    metadata?: Record<string, any>;
-  }>;
-}
-
-/**
  * 提示构建器接口
  */
 export interface PromptBuilder<T> {
@@ -190,7 +91,7 @@ export interface OutputParser<T> {
   parseCreateOutput(output: string): Partial<T>;
   parseUpdateOutput(output: string, existingData: T): Partial<T>;
   parse?(output: string): Partial<T>; // 添加通用解析方法
-  
+
   // 新增：数组支持
   parseCreateOutputArray?(output: string): Partial<T>[];
   parseUpdateOutputArray?(output: string, existingDataArray: T[]): Partial<T>[];

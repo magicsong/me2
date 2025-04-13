@@ -1,16 +1,19 @@
 import { callLLMOnce } from '@/lib/langchain/chains';
-import { BaseRequest, BaseResponse, BusinessObject, FilterOptions, ObjectConverter, OutputParser, PersistenceService, PromptBuilder } from './types';
+import { BaseRequest, BaseResponse, BusinessObject, FilterOptions, ObjectConverter, OutputParser, PatchRequest, BatchPatchRequest, BaseBatchRequest, PromptBuilder } from './types';
+import { IApiHandler } from './interfaces/IApiHandler';
+import { FilterCondition, PaginationOptions, PersistenceService } from '@/lib/db/intf';
 
 /**
- * 通用API处理基类，处理创建和更新操作
+ * 通用API处理基类，实现IApiHandler接口
  */
-export abstract class BaseApiHandler<T, BO extends BusinessObject = any> implements ObjectConverter<BO, T> {
+export abstract class BaseApiHandler<T, BO extends BusinessObject = any> 
+    implements ObjectConverter<BO, T>, IApiHandler<T, BO> {
     constructor(
         protected persistenceService: PersistenceService<T>,
         protected promptBuilder: PromptBuilder<T>,
         protected outputParser: OutputParser<T>
     ) { }
-
+    
     // 抽象方法：验证输入
     protected abstract validateInput(data: any): boolean;
 
@@ -30,6 +33,30 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
     abstract toDataObjects(businessObjects: BO[]): Partial<T>[];
 
     /**
+     * 获取持久化服务实例
+     * @returns 持久化服务实例
+     */
+    getPersistenceService(): PersistenceService<T> {
+        return this.persistenceService;
+    }
+    
+    /**
+     * 获取提示构建器实例
+     * @returns 提示构建器实例
+     */
+    getPromptBuilder(): PromptBuilder<T> {
+        return this.promptBuilder;
+    }
+    
+    /**
+     * 获取输出解析器实例
+     * @returns 输出解析器实例
+     */
+    getOutputParser(): OutputParser<T> {
+        return this.outputParser;
+    }
+
+    /**
      * 处理创建请求 - 使用业务对象
      */
     async handleCreate(request: BaseRequest<BO>): Promise<BaseResponse<BO>> {
@@ -39,30 +66,15 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
                 return this.handleAutoGenerate(request);
             }
 
-            // 处理常规创建
-            if (Array.isArray(request.data)) {
-                // 批量创建 - 先转换为数据对象
-                const dataObjects = this.toDataObjects(request.data);
-                const validData = dataObjects.filter(item => this.validateInput(item));
-                
-                if (validData.length === 0) {
-                    return { success: false, error: '没有提供有效数据' };
-                }
-
-                const createdItems = await this.persistenceService.createMany(validData as T[]);
-                // 转换回业务对象返回
-                return { success: true, data: this.toBusinessObjects(createdItems) };
-            } else {
-                // 单一创建
-                if (!request.data || !this.validateInput(this.toDataObject(request.data))) {
-                    return { success: false, error: '提供的数据无效' };
-                }
-
-                const dataObject = this.toDataObject(request.data);
-                const createdItem = await this.persistenceService.create(dataObject as T);
-                // 转换回业务对象返回
-                return { success: true, data: this.toBusinessObject(createdItem) };
+            // 单一创建
+            if (!request.data || !this.validateInput(this.toDataObject(request.data))) {
+                return { success: false, error: '提供的数据无效' };
             }
+
+            const dataObject = this.toDataObject(request.data);
+            const createdItem = await this.persistenceService.create(dataObject as Partial<T>);
+            // 转换回业务对象返回
+            return { success: true, data: this.toBusinessObject(createdItem) };
         } catch (error) {
             return {
                 success: false,
@@ -76,77 +88,276 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
      */
     async handleUpdate(request: BaseRequest<BO>): Promise<BaseResponse<BO>> {
         try {
-            if (Array.isArray(request.data)) {
-                // 批量更新
-                // 收集所有要更新的ID
-                const itemIds = request.data.filter(item => item.id).map(item => item.id);
-                
-                if (itemIds.length === 0) {
-                    return { success: false, error: '没有提供有效的ID' };
-                }
-                
-                // 创建一个包含所有要更新的字段的数据对象
-                // 注意：所有项目都将更新为相同的数据
-                let dataToUpdate = {};
-                
-                // 合并所有项目的共同字段
-                for (const item of request.data) {
-                    if (item.id) {
-                        const itemData = this.toDataObject(item);
-                        // 排除id字段
-                        delete itemData.id;
-                        dataToUpdate = { ...dataToUpdate, ...itemData };
-                    }
-                }
-                
-                // 如果启用了自动生成，则用LLM增强数据
-                if (request.autoGenerate && request.userPrompt) {
-                    try {
-                        const prompt = this.promptBuilder.buildUpdatePrompt();
-                        const llmOutput = await this.generateLLMContent(prompt, { userPrompt: request.userPrompt, ...dataToUpdate });
-                        const enhancedData = this.outputParser.parseUpdateOutput(llmOutput, dataToUpdate as T);
-                        dataToUpdate = { ...dataToUpdate, ...enhancedData };
-                    } catch (error) {
-                        console.error('使用LLM增强数据失败:', error);
-                    }
-                }
-                
-                // 使用in操作符批量更新所有项目为相同的数据
-                const filter = { id: { in: itemIds } };
-                const updatedItems = await this.persistenceService.updateMany(filter, dataToUpdate as Partial<T>);
-                
-                // 转换回业务对象返回
-                return { success: true, data: this.toBusinessObjects(updatedItems) };
-            } else {
-                // 单一更新
-                const item = request.data;
-                if (!item || !item.id) {
-                    return { success: false, error: '更新操作需要提供ID' };
-                }
-
-                let dataToUpdate = this.toDataObject(item);
-
-                // 使用LLM增强更新数据
-                if (request.autoGenerate) {
-                    const existingData = await this.getExistingData(String(item.id));
-                    if (!existingData) {
-                        return { success: false, error: '资源未找到' };
-                    }
-
-                    const prompt = this.promptBuilder.buildUpdatePrompt();
-                    const llmOutput = await this.generateLLMContent(prompt, { userPrompt: request.userPrompt, ...dataToUpdate });
-                    const enhancedData = this.outputParser.parseUpdateOutput(llmOutput, existingData);
-                    dataToUpdate = { ...dataToUpdate, ...enhancedData };
-                }
-
-                const updatedItem = await this.persistenceService.update(item.id, dataToUpdate);
-                // 转换回业务对象返回
-                return { success: true, data: this.toBusinessObject(updatedItem) };
+            const item = request.data;
+            if (!item || !item.id) {
+                return { success: false, error: '更新操作需要提供ID' };
             }
+
+            let dataToUpdate = this.toDataObject(item);
+
+            // 使用LLM增强更新数据
+            if (request.autoGenerate && request.userPrompt) {
+                const existingData = await this.getExistingData(String(item.id));
+                if (!existingData) {
+                    return { success: false, error: '资源未找到' };
+                }
+
+                const prompt = this.promptBuilder.buildUpdatePrompt();
+                const llmOutput = await this.generateLLMContent(prompt, { userPrompt: request.userPrompt, ...dataToUpdate });
+                const enhancedData = this.outputParser.parseUpdateOutput(llmOutput, existingData);
+                dataToUpdate = { ...dataToUpdate, ...enhancedData };
+            }
+
+            const updatedItem = await this.persistenceService.update(item.id, dataToUpdate);
+            // 转换回业务对象返回
+            return { success: true, data: this.toBusinessObject(updatedItem) };
         } catch (error) {
             return {
                 success: false,
                 error: error instanceof Error ? error.message : '更新资源失败'
+            };
+        }
+    }
+
+    /**
+     * 处理批量更新请求 - 允许不同的项目不同的数据
+     */
+    async handleBatchUpdate(request: BaseBatchRequest<BO>): Promise<BaseResponse<BO[]>> {
+        try {
+            if (!request.data || request.data.length === 0) {
+                return { success: false, error: '批量更新需要提供数据数组' };
+            }
+
+            // 收集所有要更新的项目
+            const itemsToUpdate = request.data.filter(item => item.id);
+            
+            if (itemsToUpdate.length === 0) {
+                return { success: false, error: '没有提供有效的更新项目' };
+            }
+            
+            // 转换为数据对象数组
+            const dataObjectsToUpdate = itemsToUpdate.map(item => {
+                const dataObj = this.toDataObject(item);
+                // 确保ID字段存在
+                dataObj.id = item.id;
+                return dataObj as Partial<T>;
+            });
+            
+            // 调用persistenceService的updateMany方法
+            const updatedItems = await this.persistenceService.updateMany(dataObjectsToUpdate);
+            
+            // 转换回业务对象
+            const businessResults = this.toBusinessObjects(updatedItems);
+            
+            return {
+                success: businessResults.length > 0,
+                data: businessResults,
+                error: businessResults.length === 0 ? '未能更新任何项目' : undefined
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : '批量更新资源失败'
+            };
+        }
+    }
+
+    /**
+     * 处理部分更新请求 - 只更新指定字段
+     */
+    async handlePatch(request: PatchRequest<BO>): Promise<BaseResponse<BO>> {
+        try {
+            if (!request.id) {
+                return { success: false, error: '更新操作需要提供ID' };
+            }
+
+            // 先检查资源是否存在
+            const existingItem = await this.getExistingData(String(request.id));
+            if (!existingItem) {
+                return { success: false, error: '资源未找到' };
+            }
+
+            // 如果提供了userId限制，则验证资源归属
+            if (request.userId && existingItem['userId'] !== request.userId) {
+                return { success: false, error: '无权更新此资源' };
+            }
+
+            // 将业务字段转换为数据字段
+            const dataFields = this.toDataObject(request.fields as any);
+            
+            // 更新指定字段
+            const updatedItem = await this.persistenceService.update(request.id, dataFields);
+            
+            // 转换回业务对象
+            return { success: true, data: this.toBusinessObject(updatedItem) };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : '部分更新资源失败'
+            };
+        }
+    }
+    
+    /**
+     * 处理批量部分更新请求 - 将多个资源的相同字段更新为相同值
+     */
+    async handleBatchPatch(request: BatchPatchRequest<BO>): Promise<BaseResponse<BO>> {
+        try {
+            if (!request.id || request.id.length === 0) {
+                return { success: false, error: '批量更新操作需要提供ID列表' };
+            }
+
+            // 将业务字段转换为数据字段
+            const dataFields = this.toDataObject(request.fields as any);
+            
+            // 创建过滤条件
+            const filter: FilterCondition<T> = {
+                id: { in: request.id as any }
+            } as FilterCondition<T>;
+            
+            // 如果提供了userId限制
+            if (request.userId) {
+                (filter as any).userId = request.userId;
+            }
+            
+            // 使用patchMany方法批量更新
+            const updatedItems = await this.persistenceService.patchMany(filter, dataFields as Partial<T>);
+            
+            // 转换回业务对象返回
+            return { success: true, data: this.toBusinessObjects(updatedItems) };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : '批量部分更新资源失败'
+            };
+        }
+    }
+
+    /**
+     * 使用AI根据用户提示生成单个BO对象
+     */
+    async generateWithAI(request: BaseRequest<Partial<BO>>): Promise<BaseResponse<BO>> {
+        try {
+            if (!request.userPrompt) {
+                return { success: false, error: 'userPrompt字段必填' };
+            }
+
+            // 获取部分数据作为提示基础
+            let partialData: Partial<T> | undefined;
+            if (request.data && !Array.isArray(request.data)) {
+                partialData = this.toDataObject(request.data);
+            }
+
+            // 生成提示
+            const prompt = this.promptBuilder.buildCreatePrompt();
+            
+            // 调用LLM生成内容
+            const llmOutput = await this.generateLLMContent(prompt, { 
+                userPrompt: request.userPrompt, 
+                ...partialData 
+            });
+            
+            // 解析生成的内容
+            const generatedData = this.outputParser.parseCreateOutput(llmOutput);
+            
+            // 这里不保存到数据库，只返回生成的对象
+            // 转换为业务对象并返回
+            const businessObject = this.toBusinessObject(generatedData as T);
+            
+            // 确保没有ID
+            delete businessObject.id;
+            
+            return {
+                success: true,
+                data: businessObject
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : '使用AI生成资源失败'
+            };
+        }
+    }
+    
+    /**
+     * 使用AI根据用户提示批量生成多个BO对象
+     */
+    async generateBatchWithAI(request: BaseRequest<Partial<BO>>): Promise<BaseResponse<BO[]>> {
+        try {
+            if (!request.userPrompt) {
+                return { success: false, error: 'userPrompt字段必填' };
+            }
+
+            const batchSize = request.batchSize || 3; // 默认生成3个
+            const results: BO[] = [];
+
+            // 获取部分数据作为提示基础
+            let partialData: Partial<T> | undefined;
+            if (request.data && !Array.isArray(request.data)) {
+                partialData = this.toDataObject(request.data);
+            }
+
+            // 尝试使用批量生成
+            if (typeof this.outputParser.parseCreateOutputArray === 'function') {
+                // 生成提示
+                const prompt = this.promptBuilder.buildCreatePrompt();
+                
+                // 添加批量生成的指示
+                const batchPrompt = `${prompt}\n请生成${batchSize}个不同的对象，以JSON数组格式返回。`;
+                
+                // 调用LLM生成内容
+                const llmOutput = await this.generateLLMContent(batchPrompt, { 
+                    userPrompt: request.userPrompt, 
+                    batchSize,
+                    ...partialData 
+                });
+                
+                // 解析生成的批量内容
+                const generatedItems = this.outputParser.parseCreateOutputArray(llmOutput);
+                
+                // 转换为业务对象
+                for (const item of generatedItems) {
+                    const businessObject = this.toBusinessObject(item as T);
+                    delete businessObject.id; // 确保没有ID
+                    results.push(businessObject);
+                    
+                    // 如果已经生成了足够的数量，就停止
+                    if (results.length >= batchSize) break;
+                }
+            }
+            
+            // 如果批量生成失败或不支持，则逐个生成
+            if (results.length === 0) {
+                for (let i = 0; i < batchSize; i++) {
+                    // 生成提示
+                    const prompt = this.promptBuilder.buildCreatePrompt();
+                    
+                    // 调用LLM生成内容
+                    const llmOutput = await this.generateLLMContent(prompt, { 
+                        userPrompt: `${request.userPrompt} (生成第${i+1}个，请确保与之前生成的不同)`, 
+                        ...partialData 
+                    });
+                    
+                    // 解析生成的内容
+                    const generatedData = this.outputParser.parseCreateOutput(llmOutput);
+                    
+                    // 转换为业务对象
+                    const businessObject = this.toBusinessObject(generatedData as T);
+                    delete businessObject.id; // 确保没有ID
+                    results.push(businessObject);
+                }
+            }
+            
+            return {
+                success: results.length > 0,
+                data: results,
+                generatedCount: results.length,
+                error: results.length === 0 ? '未能生成任何项目' : undefined
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : '使用AI批量生成资源失败'
             };
         }
     }
@@ -250,7 +461,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
      */
     async getById(id: string): Promise<BO | null> {
         try {
-            const item = await this.getExistingData(id);
+            const item = await this.persistenceService.findById(id);
             return item ? this.toBusinessObject(item) : null;
         } catch (error) {
             console.error(`获取${this.resourceName()}失败:`, error);
@@ -295,41 +506,53 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
             page = Math.max(1, page);
             pageSize = Math.max(1, Math.min(100, pageSize)); // 限制每页大小
 
-            // 获取总数量
-            let total = 0;
-            let items: T[] = [];
+            // 创建分页选项
+            const paginationOptions: PaginationOptions = {
+                page,
+                pageSize
+            };
+
+            // 创建过滤条件
+            const filter: FilterCondition<T> = {} as FilterCondition<T>;
+            if (userId) {
+                (filter as any).userId = userId;
+            }
 
             // 如果持久化服务支持分页
-            if (typeof this.persistenceService.getPage === 'function') {
-                const result = await this.persistenceService.getPage(page, pageSize, userId);
-                items = result.items;
-                total = result.total;
+            if (typeof this.persistenceService.getPageWithFilters === 'function') {
+                const result = await this.persistenceService.getPageWithFilters(paginationOptions, filter, userId);
+                
+                return {
+                    items: this.toBusinessObjects(result.items),
+                    total: result.total,
+                    page: result.page,
+                    pageSize: result.pageSize,
+                    totalPages: result.totalPages
+                };
             } else {
                 // 降级处理：获取所有项目然后手动分页
-                items = userId && typeof this.persistenceService.getByUserId === 'function'
-                    ? await this.persistenceService.getByUserId(userId)
-                    : await this.persistenceService.getAll(userId);
+                const items = await this.persistenceService.getAll(userId);
                 
-                total = items.length;
+                const total = items.length;
                 
                 // 手动分页
                 const startIndex = (page - 1) * pageSize;
-                items = items.slice(startIndex, startIndex + pageSize);
+                const paginatedItems = items.slice(startIndex, startIndex + pageSize);
+                
+                // 计算总页数
+                const totalPages = Math.ceil(total / pageSize);
+
+                // 转换为业务对象
+                const boItems = this.toBusinessObjects(paginatedItems);
+
+                return {
+                    items: boItems,
+                    total,
+                    page,
+                    pageSize,
+                    totalPages
+                };
             }
-
-            // 计算总页数
-            const totalPages = Math.ceil(total / pageSize);
-
-            // 转换为业务对象
-            const boItems = this.toBusinessObjects(items);
-
-            return {
-                items: boItems,
-                total,
-                page,
-                pageSize,
-                totalPages
-            };
         } catch (error) {
             console.error(`分页获取${this.resourceName()}失败:`, error);
             return {
@@ -357,8 +580,10 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
             if (typeof this.persistenceService.getWithFilters !== 'function') {
                 throw new Error(`${this.resourceName()}持久化服务不支持过滤查询`);
             }
-
-            const result = await this.persistenceService.getWithFilters(filters, userId);
+            
+            const dbFilters = this.convertFilters(filters)
+            console.log(dbFilters)
+            const result = await this.persistenceService.getWithFilters(dbFilters, userId);
             
             return {
                 items: this.toBusinessObjects(result.items),
@@ -376,15 +601,15 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
 
     /**
      * 分页获取并过滤资源
+     * @param filters 过滤选项
      * @param page 页码，从1开始
      * @param pageSize 每页大小
-     * @param filters 过滤选项
      * @param userId 可选的用户ID
      */
     async getPageWithFilters(
+        filters: FilterOptions,
         page: number = 1,
         pageSize: number = 10,
-        filters: FilterOptions,
         userId?: string
     ): Promise<{
         items: BO[];
@@ -399,10 +624,26 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
             page = Math.max(1, page);
             pageSize = Math.max(1, Math.min(100, pageSize));
 
+            // 创建分页选项
+            const paginationOptions: PaginationOptions = {
+                page,
+                pageSize,
+                sortBy: filters.sortBy,
+                sortOrder: filters.sortDirection
+            };
+            
+            // 转换为持久层的过滤条件
+            const filterCondition: FilterCondition<T> = this.convertFilters(filters);
+            console.log(filterCondition)
+            // 如果提供了userId，添加到过滤条件
+            if (userId) {
+                (filterCondition as any).userId = userId;
+            }
+
             // 检查持久化服务是否支持分页过滤查询
             if (typeof this.persistenceService.getPageWithFilters === 'function') {
                 const result = await this.persistenceService.getPageWithFilters(
-                    page, pageSize, filters, userId
+                    paginationOptions, filterCondition, userId
                 );
                 
                 return {
@@ -411,26 +652,6 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
                     page: result.page,
                     pageSize: result.pageSize,
                     totalPages: result.totalPages,
-                    metadata: result.metadata
-                };
-            }
-            
-            // 降级处理：使用不分页的过滤查询然后手动分页
-            if (typeof this.persistenceService.getWithFilters === 'function') {
-                const result = await this.persistenceService.getWithFilters(filters, userId);
-                const total = result.total;
-                const totalPages = Math.ceil(total / pageSize);
-                
-                // 手动应用分页
-                const startIndex = (page - 1) * pageSize;
-                const paginatedItems = result.items.slice(startIndex, startIndex + pageSize);
-                
-                return {
-                    items: this.toBusinessObjects(paginatedItems),
-                    total,
-                    page,
-                    pageSize,
-                    totalPages,
                     metadata: result.metadata
                 };
             }
@@ -447,5 +668,60 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
                 totalPages: 0
             };
         }
+    }
+    
+    /**
+     * 转换API过滤条件为持久层过滤条件
+     * @param filters API过滤选项
+     * @returns 持久层过滤条件
+     */
+    protected convertFilters(filters: FilterOptions): FilterCondition<T> {
+        const result: FilterCondition<T> = {} as FilterCondition<T>;
+        if (filters.conditions && filters.conditions.length > 0) {
+            for (const condition of filters.conditions) {
+                // 处理eq操作符，这会覆盖之前的任何条件
+                if (condition.operator === 'eq') {
+                    result[condition.field] = condition.value;
+                    continue;
+                }
+                
+                // 处理其他操作符
+                // 如果字段尚未初始化或不是对象，需要初始化为对象
+                if (!result[condition.field] || typeof result[condition.field] !== 'object') {
+                    // 如果已经有值，它是一个简单值（eq操作符的结果），记录警告
+                    if (result[condition.field] !== undefined) {
+                        console.warn(`字段 ${condition.field} 已有等于条件，添加 ${condition.operator} 条件可能导致意外结果`);
+                    }
+                    result[condition.field] = {};
+                }
+                
+                // 根据操作符设置条件
+                switch (condition.operator) {
+                    case 'neq':
+                        result[condition.field].ne = condition.value;
+                        break;
+                    case 'gt':
+                        result[condition.field].gt = condition.value;
+                        break;
+                    case 'gte':
+                        result[condition.field].gte = condition.value;
+                        break;
+                    case 'lt':
+                        result[condition.field].lt = condition.value;
+                        break;
+                    case 'lte':
+                        result[condition.field].lte = condition.value;
+                        break;
+                    case 'like':
+                        result[condition.field].like = condition.value;
+                        break;
+                    case 'in':
+                        result[condition.field].in = condition.value;
+                        break;
+                }
+            }
+        }
+        
+        return result;
     }
 }

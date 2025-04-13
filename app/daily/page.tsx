@@ -42,7 +42,19 @@ export default function DailyStartPage() {
 
   async function fetchTodos() {
     try {
-      const response = await fetch(`/api/todo?date=${selectedDate.toISOString()}`);
+      // 获取选中日期的0点时间
+      const startOfDay = new Date(selectedDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      // 获取选中日期的23:59:59时间
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // 使用范围查询运算符，精确获取当天的待办事项
+      const response = await fetch(
+        `/api/todo?plannedDate_gte=${startOfDay.toISOString()}&plannedDate_lte=${endOfDay.toISOString()}`
+      );
+      
       const result = await response.json();
 
       if (result.success) {
@@ -60,10 +72,12 @@ export default function DailyStartPage() {
 
   async function fetchYesterdayTodos() {
     try {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      // 获取今天0点的时间
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
 
-      const response = await fetch(`/api/todo?includePrevious=true&date=${yesterday.toISOString()}`);
+      // 使用小于运算符获取所有过去的待办事项（包括昨天）
+      const response = await fetch(`/api/todo?plannedDate_lt=${todayStart.toISOString()}`);
       const result = await response.json();
 
       if (result.success) {

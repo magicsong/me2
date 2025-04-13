@@ -1,48 +1,10 @@
 import { sql, eq, and, or, desc, asc, SQL } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PgTableWithColumns } from 'drizzle-orm/pg-core';
-import { db } from '.';
-
-// 分页结果接口
-export interface PaginatedResult<T> {
-    data: T[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-}
-
-// 排序类型
-export type SortOrder = 'asc' | 'desc';
-
-// 分页选项
-export interface PaginationOptions {
-    page?: number;
-    pageSize?: number;
-    sortBy?: string;
-    sortOrder?: SortOrder;
-}
-
-// 钩子类型定义
-export interface RepositoryHooks<T> {
-    beforeCreate?: (data: Partial<T>) => Promise<Partial<T>> | Partial<T>;
-    afterCreate?: (data: T) => Promise<T> | T;
-    beforeUpdate?: (id: any, data: Partial<T>) => Promise<Partial<T>> | Partial<T>;
-    afterUpdate?: (data: T) => Promise<T> | T;
-    beforeDelete?: (id: any) => Promise<boolean> | boolean;
-    afterDelete?: (data: T) => Promise<T> | T;
-    beforeQuery?: (filter: FilterCondition<T>) => Promise<FilterCondition<T>> | FilterCondition<T>;
-    afterQuery?: (data: T | T[] | null) => Promise<T | T[] | null> | T | T[] | null;
-    afterPagination?: (result: PaginatedResult<T>) => Promise<PaginatedResult<T>> | PaginatedResult<T>;
-}
-
-// 过滤条件
-export type FilterCondition<T> = Partial<{
-    [K in keyof T]: T[K] | { eq?: T[K]; neq?: T[K]; gt?: T[K]; gte?: T[K]; lt?: T[K]; lte?: T[K]; in?: T[K][]; like?: string }
-}>;
+import { db, FilterCondition, PaginationOptions, RepositoryHooks, PersistenceService, PaginatedResult } from '.';
 
 // 基础仓库类
-export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<string, any>> {
+export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<string, any>> implements PersistenceService<I> {
     protected db: NodePgDatabase;
     protected table: T;
     protected primaryKey: keyof I;
@@ -104,7 +66,7 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
     }
 
     // 通过ID查找记录
-    async findById(id: any): Promise<I | null> {
+    async findById(id: string | number): Promise<I | null> {
         let filter = { [this.primaryKey]: id } as FilterCondition<I>;
         
         if (this.hooks.beforeQuery) {
@@ -125,6 +87,17 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
         }
 
         return data;
+    }
+
+    // 获取所有记录
+    async getAll(userId?: string): Promise<I[]> {
+        let filter = {} as FilterCondition<I>;
+        
+        if (userId) {
+            filter = { user_id: userId } as unknown as FilterCondition<I>;
+        }
+        
+        return this.findMany(filter);
     }
 
     // 查找单条记录
@@ -170,15 +143,199 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
         return data;
     }
 
-    // 分页查询
-    async findWithPagination(
+    // 更新记录
+    async update(id: string | number, data: Partial<I>): Promise<I> {
+        let result = await this._update(id, data);
+        if (!result) {
+            throw new Error(`记录 ${id} 不存在`);
+        }
+        return result;
+    }
+
+    // 内部更新方法，保留原有逻辑
+    private async _update(id: any, data: Partial<I>): Promise<I | null> {
+        let processedData = { ...data };
+        
+        if (this.hooks.beforeUpdate) {
+            processedData = await Promise.resolve(this.hooks.beforeUpdate(id, processedData));
+        }
+
+        const result = await this.db
+            .update(this.table)
+            .set(processedData as any)
+            .where(eq(this.table[this.primaryKey as string] as any, id))
+            .returning();
+
+        let updatedData = result.length > 0 ? (result[0] as I) : null;
+
+        if (this.hooks.afterUpdate && updatedData) {
+            updatedData = await Promise.resolve(this.hooks.afterUpdate(updatedData));
+        }
+
+        return updatedData;
+    }
+
+    // 批量更新记录
+    async updateMany(data: Partial<I>[]): Promise<I[]> {
+        const results: I[] = [];
+        
+        for (const item of data) {
+            const id = item[this.primaryKey];
+            if (!id) {
+                throw new Error(`更新数据必须包含主键 ${String(this.primaryKey)}`);
+            }
+            
+            const result = await this._update(id, item);
+            if (result) {
+                results.push(result);
+            }
+        }
+        
+        return results;
+    }
+
+    // 批量更新某个字段
+    async patchMany(filter: FilterCondition<I>, data: Partial<I>): Promise<I[]> {
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
+
+        let processedData = { ...data };
+        const condition = this.buildWhereCondition(filter);
+        const result = await this.db
+            .update(this.table)
+            .set(processedData as any)
+            .where(condition)
+            .returning();
+
+        let updatedData = result as I[];
+
+        if (this.hooks.afterUpdate) {
+            updatedData = await Promise.all(
+                updatedData.map(item => Promise.resolve(this.hooks.afterUpdate!(item)))
+            );
+        }
+
+        return updatedData;
+    }
+
+    // 删除记录
+    async delete(id: string | number): Promise<I> {
+        const result = await this._delete(id);
+        if (!result) {
+            throw new Error(`记录 ${id} 不存在`);
+        }
+        return result;
+    }
+
+    // 内部删除方法，保留原有逻辑
+    private async _delete(id: any): Promise<I | null> {
+        if (this.hooks.beforeDelete) {
+            const shouldProceed = await Promise.resolve(this.hooks.beforeDelete(id));
+            if (!shouldProceed) return null;
+        }
+
+        const result = await this.db
+            .delete(this.table)
+            .where(eq(this.table[this.primaryKey as string] as any, id))
+            .returning();
+
+        let deletedData = result.length > 0 ? (result[0] as I) : null;
+
+        if (this.hooks.afterDelete && deletedData) {
+            deletedData = await Promise.resolve(this.hooks.afterDelete(deletedData));
+        }
+
+        return deletedData;
+    }
+
+    // 批量删除记录
+    async deleteMany(filter: FilterCondition<I>): Promise<I[]> {
+        if (this.hooks.beforeQuery) {
+            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
+        }
+
+        const condition = this.buildWhereCondition(filter);
+        const result = await this.db
+            .delete(this.table)
+            .where(condition)
+            .returning();
+
+        let deletedData = result as I[];
+
+        if (this.hooks.afterDelete) {
+            deletedData = await Promise.all(
+                deletedData.map(item => Promise.resolve(this.hooks.afterDelete!(item)))
+            );
+        }
+
+        return deletedData;
+    }
+
+    // 通过用户ID获取记录
+    async getByUserId(userId: string): Promise<I[]> {
+        return this.findMany({ user_id: userId } as unknown as FilterCondition<I>);
+    }
+
+    // 通用过滤方法
+    async getWithFilters(
+        filter: FilterCondition<I>,
+        userId?: string
+    ): Promise<{
+        items: I[];
+        total: number;
+        metadata?: Record<string, any>;
+    }> {
+        if (userId) {
+            filter = { ...filter, user_id: userId } as unknown as FilterCondition<I>;
+        }
+
+        const data = await this.findMany(filter);
+        return {
+            items: data,
+            total: data.length
+        };
+    }
+
+    // 带分页的通用过滤方法
+    async getPageWithFilters(
+        page: PaginationOptions,
+        filter?: FilterCondition<I>,
+        userId?: string
+    ): Promise<{
+        items: I[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+        metadata?: Record<string, any>;
+    }> {
+        const actualFilter = filter || {};
+        console.log("db",actualFilter)
+        if (userId) {
+            actualFilter.user_id = userId as any;
+        }
+
+        const result = await this.findWithPagination(actualFilter, page);
+        
+        return {
+            items: result.data,
+            total: result.total,
+            page: result.page,
+            pageSize: result.pageSize,
+            totalPages: result.totalPages
+        };
+    }
+
+    // 内部分页查询方法
+    private async findWithPagination(
         filter: FilterCondition<I> = {},
         options: PaginationOptions = {}
     ): Promise<PaginatedResult<I>> {
         if (this.hooks.beforeQuery) {
             filter = await Promise.resolve(this.hooks.beforeQuery(filter));
         }
-
+        console.log("db",filter)
         const { page = 1, pageSize = 10, sortBy, sortOrder = 'asc' } = options;
         const offset = (page - 1) * pageSize;
         const condition = this.buildWhereCondition(filter);
@@ -225,100 +382,6 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
         }
 
         return result;
-    }
-
-    // 更新记录
-    async update(id: any, data: Partial<I>): Promise<I | null> {
-        let processedData = { ...data };
-        
-        if (this.hooks.beforeUpdate) {
-            processedData = await Promise.resolve(this.hooks.beforeUpdate(id, processedData));
-        }
-
-        const result = await this.db
-            .update(this.table)
-            .set(processedData as any)
-            .where(eq(this.table[this.primaryKey as string] as any, id))
-            .returning();
-
-        let updatedData = result.length > 0 ? (result[0] as I) : null;
-
-        if (this.hooks.afterUpdate && updatedData) {
-            updatedData = await Promise.resolve(this.hooks.afterUpdate(updatedData));
-        }
-
-        return updatedData;
-    }
-
-    // 批量更新记录
-    async updateMany(filter: FilterCondition<I>, data: Partial<I>): Promise<I[]> {
-        if (this.hooks.beforeQuery) {
-            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
-        }
-
-        let processedData = { ...data };
-        // 批量更新没有单独的beforeUpdate钩子，因为没有具体ID
-
-        const condition = this.buildWhereCondition(filter);
-        const result = await this.db
-            .update(this.table)
-            .set(processedData as any)
-            .where(condition)
-            .returning();
-
-        let updatedData = result as I[];
-
-        if (this.hooks.afterUpdate) {
-            updatedData = await Promise.all(
-                updatedData.map(item => Promise.resolve(this.hooks.afterUpdate!(item)))
-            );
-        }
-
-        return updatedData;
-    }
-
-    // 删除记录
-    async delete(id: any): Promise<I | null> {
-        if (this.hooks.beforeDelete) {
-            const shouldProceed = await Promise.resolve(this.hooks.beforeDelete(id));
-            if (!shouldProceed) return null;
-        }
-
-        const result = await this.db
-            .delete(this.table)
-            .where(eq(this.table[this.primaryKey as string] as any, id))
-            .returning();
-
-        let deletedData = result.length > 0 ? (result[0] as I) : null;
-
-        if (this.hooks.afterDelete && deletedData) {
-            deletedData = await Promise.resolve(this.hooks.afterDelete(deletedData));
-        }
-
-        return deletedData;
-    }
-
-    // 批量删除记录
-    async deleteMany(filter: FilterCondition<I>): Promise<I[]> {
-        if (this.hooks.beforeQuery) {
-            filter = await Promise.resolve(this.hooks.beforeQuery(filter));
-        }
-
-        const condition = this.buildWhereCondition(filter);
-        const result = await this.db
-            .delete(this.table)
-            .where(condition)
-            .returning();
-
-        let deletedData = result as I[];
-
-        if (this.hooks.afterDelete) {
-            deletedData = await Promise.all(
-                deletedData.map(item => Promise.resolve(this.hooks.afterDelete!(item)))
-            );
-        }
-
-        return deletedData;
     }
 
     // 构建where条件

@@ -1,8 +1,7 @@
-import { PersistenceService, FilterOptions } from '@/app/api/lib/types';
-import { BaseRepository, FilterCondition, PaginationOptions } from './base';
+import { FilterOptions} from '@/app/api/lib/types';
 import { PgTableWithColumns } from 'drizzle-orm/pg-core';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, or, like, gte, lte, desc } from 'drizzle-orm';
+import { BaseRepository } from './base';
+import { PersistenceService } from './intf';
 
 /**
  * 基础持久化服务类
@@ -107,114 +106,5 @@ export class BasePersistenceService<
       throw new Error(`记录不存在: ${id}`);
     }
     return result;
-  }
-
-  /**
-   * 将通用过滤选项转换为BaseRepository的过滤条件
-   */
-  protected convertToFilterCondition(filters: FilterOptions, userId?: string): FilterCondition<I> {
-    const result: Record<string, any> = {};
-    
-    if (userId) {
-      result[this.userIdField as string] = userId;
-    }
-    
-    if (filters.conditions) {
-      for (const condition of filters.conditions) {
-        const { field, operator, value } = condition;
-        
-        if (!result[field]) {
-          result[field] = {};
-        }
-        
-        // 简单映射操作符到过滤条件
-        switch (operator) {
-          case 'eq':
-            result[field] = value;
-            break;
-          case 'neq':
-            result[field].neq = value;
-            break;
-          case 'gt':
-            result[field].gt = value;
-            break;
-          case 'gte':
-            result[field].gte = value;
-            break;
-          case 'lt':
-            result[field].lt = value;
-            break;
-          case 'lte':
-            result[field].lte = value;
-            break;
-          case 'like':
-            result[field].like = value;
-            break;
-          case 'in':
-            result[field].in = value;
-            break;
-        }
-      }
-    }
-    
-    return result as FilterCondition<I>;
-  }
-  
-  /**
-   * 使用通用过滤器获取记录
-   */
-  async getWithFilters(
-    filters: FilterOptions,
-    userId?: string
-  ): Promise<{
-    items: I[];
-    total: number;
-    metadata?: Record<string, any>;
-  }> {
-    // 对于复杂的过滤逻辑，子类可以覆盖此方法
-    const filter = this.convertToFilterCondition(filters, userId);
-    const items = await this.findMany(filter);
-    const total = items.length;
-    
-    return {
-      items,
-      total
-    };
-  }
-
-  /**
-   * 带分页的通用过滤方法
-   */
-  async getPageWithFilters(
-    page: number,
-    pageSize: number,
-    filters: FilterOptions,
-    userId?: string
-  ): Promise<{
-    items: I[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-    metadata?: Record<string, any>;
-  }> {
-    // 对于复杂的过滤逻辑，子类可以覆盖此方法
-    const filter = this.convertToFilterCondition(filters, userId);
-    const paginationOptions: PaginationOptions = {
-      page,
-      pageSize,
-      sortBy: filters.sortBy,
-      sortOrder: filters.sortDirection === 'desc' ? 'desc' : 'asc'
-    };
-    
-    const result = await this.findWithPagination(filter, paginationOptions);
-    
-    return {
-      items: result.data,
-      total: result.total,
-      page: result.page,
-      pageSize: result.pageSize,
-      totalPages: result.totalPages
-    };
   }
 }

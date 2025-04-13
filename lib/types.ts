@@ -49,22 +49,3 @@ export interface OutputParser<T> {
   parseCreateOutput(output: string): T;
   parseUpdateOutput(output: string, existingData: T): T;
 }
-
-
-// 1. 操作符枚举 + 通用 FilterCondition
-export enum FilterOperator {
-    EQ = '=',
-    NE = '!=',
-    GT = '>',
-    LT = '<',
-    GTE = '>=',
-    LTE = '<=',
-    IN = 'in',
-    LIKE = 'like',
-  }
-  
-  export interface FilterCondition<TRow> {
-    field: keyof TRow;
-    operator: FilterOperator;
-    value: any;
-  }
