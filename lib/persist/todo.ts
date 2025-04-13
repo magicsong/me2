@@ -239,12 +239,24 @@ export class TodoPersistenceService extends BasePersistenceService<typeof todos,
 
   /**
    * 根据日期获取 Todo
+   * @param date 日期
+   * @param userId 用户ID
+   * @param includePrevious 是否包含早于指定日期的待办事项，默认为false
    */
-  async getByDate(date: Date, userId: string): Promise<TodoData[]> {
-    return this.findMany({
-      user_id: userId,
-      planned_date: date.toISOString()
-    });
+  async getByDate(date: Date, userId: string, includePrevious: boolean = false): Promise<TodoData[]> {
+    if (!includePrevious) {
+      // 只获取特定日期的待办事项
+      return this.findMany({
+        user_id: userId,
+        planned_date: date.toISOString()
+      });
+    } else {
+      // 获取早于或等于指定日期的待办事项
+      return this.findMany({
+        user_id: userId,
+        planned_date: { lte: date.toISOString() }
+      });
+    }
   }
 
   /**

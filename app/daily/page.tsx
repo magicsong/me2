@@ -34,7 +34,7 @@ export default function DailyStartPage() {
   useEffect(() => {
     const today = new Date().toDateString();
     const lastWelcomeDate = localStorage.getItem("lastWelcomeDate");
-    
+
     if (lastWelcomeDate === today) {
       setShowWelcome(true);
     }
@@ -44,7 +44,7 @@ export default function DailyStartPage() {
     try {
       const response = await fetch(`/api/todo?date=${selectedDate.toISOString()}`);
       const result = await response.json();
-      
+
       if (result.success) {
         console.log(result.data)
         setTodos(result.data as TodoBO[]);
@@ -62,10 +62,10 @@ export default function DailyStartPage() {
     try {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      
-      const response = await fetch(`/api/todo?date=${yesterday.toISOString()}`);
+
+      const response = await fetch(`/api/todo?includePrevious=true&date=${yesterday.toISOString()}`);
       const result = await response.json();
-      
+
       if (result.success) {
         setTodosYesterday(result.data);
       } else {
@@ -80,7 +80,7 @@ export default function DailyStartPage() {
     try {
       const response = await fetch(`/api/pomodoro?date=${selectedDate.toISOString()}`);
       const result = await response.json();
-      
+
       if (result.success) {
         setPomodoroSessions(result.data);
       } else {
@@ -98,13 +98,13 @@ export default function DailyStartPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: todo }),
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         // 更新本地状态
-        setTodos(prevTodos => 
-          prevTodos.map(item => 
+        setTodos(prevTodos =>
+          prevTodos.map(item =>
             item.todo.id === todo.id ? { ...item, todo: result.data } : item
           )
         );
@@ -123,15 +123,15 @@ export default function DailyStartPage() {
 
   async function handleUpdateTodoTime(todoId: number, startTime: string, endTime: string) {
     const todoToUpdate = todos.find(item => item.todo.id === todoId)?.todo;
-    
+
     if (!todoToUpdate) return;
-    
+
     const updatedTodo = {
       ...todoToUpdate,
       planned_start_time: startTime,
       planned_end_time: endTime
     };
-    
+
     return handleUpdateTodo(updatedTodo);
   }
 
@@ -140,15 +140,15 @@ export default function DailyStartPage() {
       const response = await fetch('/api/pomodoro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          todoId, 
+        body: JSON.stringify({
+          todoId,
           duration: 25, // 默认25分钟
           startTime: new Date().toISOString()
         }),
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         router.push(`/pomodoro/${result.data.id}`);
       } else {
@@ -167,9 +167,9 @@ export default function DailyStartPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ todos }),
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         toast.success("批量更新成功");
         fetchTodos(); // 重新获取待办事项
@@ -197,15 +197,15 @@ export default function DailyStartPage() {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <h1 className="text-2xl font-bold">开始今天</h1>
-      
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full md:w-[400px] grid-cols-2">
           <TabsTrigger value="planning">日常规划</TabsTrigger>
           <TabsTrigger value="timeline">时间线视图</TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="planning" className="mt-4">
-          <DailyPlanning 
+          <DailyPlanning
             todos={todos}
             yesterdayTodos={todosYesterday}
             onUpdateTodo={handleUpdateTodo}
@@ -213,9 +213,9 @@ export default function DailyStartPage() {
             onChangeTab={() => setActiveTab("timeline")}
           />
         </TabsContent>
-        
+
         <TabsContent value="timeline" className="mt-4">
-          <DailyTimelineView 
+          <DailyTimelineView
             todos={todos}
             pomodoroSessions={pomodoroSessions}
             selectedDate={selectedDate}

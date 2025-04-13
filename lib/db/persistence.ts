@@ -99,17 +99,6 @@ export class BasePersistenceService<
   }
 
   /**
-   * 批量更新记录
-   */
-  async updateMany(updates: { id: string | number; data: Partial<I> }[]): Promise<I[]> {
-    const results: I[] = [];
-    for (const update of updates) {
-      results.push(await this.update(update.id, update.data));
-    }
-    return results;
-  }
-
-  /**
    * 删除记录
    */
   async delete(id: string | number): Promise<I> {

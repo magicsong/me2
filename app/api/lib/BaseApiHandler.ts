@@ -78,35 +78,43 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any> impleme
         try {
             if (Array.isArray(request.data)) {
                 // 批量更新
-                const updateOperations = [];
-
+                // 收集所有要更新的ID
+                const itemIds = request.data.filter(item => item.id).map(item => item.id);
+                
+                if (itemIds.length === 0) {
+                    return { success: false, error: '没有提供有效的ID' };
+                }
+                
+                // 创建一个包含所有要更新的字段的数据对象
+                // 注意：所有项目都将更新为相同的数据
+                let dataToUpdate = {};
+                
+                // 合并所有项目的共同字段
                 for (const item of request.data) {
-                    if (!item.id) {
-                        continue;
+                    if (item.id) {
+                        const itemData = this.toDataObject(item);
+                        // 排除id字段
+                        delete itemData.id;
+                        dataToUpdate = { ...dataToUpdate, ...itemData };
                     }
-
-                    let dataToUpdate = this.toDataObject(item);
-
-                    // 使用LLM增强更新数据
-                    if (request.autoGenerate) {
-                        const existingData = await this.getExistingData(String(item.id));
-                        if (!existingData) {
-                            continue;
-                        }
-
+                }
+                
+                // 如果启用了自动生成，则用LLM增强数据
+                if (request.autoGenerate && request.userPrompt) {
+                    try {
                         const prompt = this.promptBuilder.buildUpdatePrompt();
                         const llmOutput = await this.generateLLMContent(prompt, { userPrompt: request.userPrompt, ...dataToUpdate });
-                        const enhancedData = this.outputParser.parseUpdateOutput(llmOutput, existingData);
+                        const enhancedData = this.outputParser.parseUpdateOutput(llmOutput, dataToUpdate as T);
                         dataToUpdate = { ...dataToUpdate, ...enhancedData };
+                    } catch (error) {
+                        console.error('使用LLM增强数据失败:', error);
                     }
-
-                    updateOperations.push({
-                        id: item.id,
-                        data: dataToUpdate
-                    });
                 }
-
-                const updatedItems = await this.persistenceService.updateMany(updateOperations);
+                
+                // 使用in操作符批量更新所有项目为相同的数据
+                const filter = { id: { in: itemIds } };
+                const updatedItems = await this.persistenceService.updateMany(filter, dataToUpdate as Partial<T>);
+                
                 // 转换回业务对象返回
                 return { success: true, data: this.toBusinessObjects(updatedItems) };
             } else {

@@ -18,16 +18,12 @@ import { TodoBO } from "@/app/api/todo/types";
 interface DailyPlanningProps {
   todos: TodoBO[];
   yesterdayTodos: TodoBO[];
-  onUpdateTodo: (todo: Todo) => Promise<boolean>;
-  onBatchUpdateTodos: (todos: Todo[]) => Promise<boolean>;
   onChangeTab: () => void;
 }
 
 export function DailyPlanning({
   todos,
   yesterdayTodos,
-  onUpdateTodo,
-  onBatchUpdateTodos,
   onChangeTab
 }: DailyPlanningProps) {
   const [selectedTodos, setSelectedTodos] = useState<number[]>([]);
@@ -65,14 +61,101 @@ export function DailyPlanning({
       if (selectedTodos.length === incompleteTodos.length) {
         setSelectedTodos([]);
       } else {
-        setSelectedTodos(incompleteTodos.map(({ todo }) => todo.id));
+        setSelectedTodos(incompleteTodos.map((todo) => todo.id));
       }
     } else {
       if (selectedTodos.length === todos.length) {
         setSelectedTodos([]);
       } else {
-        setSelectedTodos(todos.map(({ todo }) => todo.id));
+        setSelectedTodos(todos.map((todo) => todo.id));
       }
+    }
+  }
+
+  // 更新单个待办事项
+  async function updateTodo(todo: TodoBO): Promise<boolean> {
+    try {
+      const response = await fetch('/api/todo/' + todo.id, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ todo }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success("待办事项已更新");
+        return true;
+      } else {
+        toast.error(result.error || "更新失败");
+        return false;
+      }
+    } catch (error) {
+      console.error("更新待办事项失败:", error);
+      toast.error("更新待办事项时出错");
+      return false;
+    }
+  }
+
+  // 批量更新待办事项字段
+  async function batchUpdateField(field: string, updates: { id: string; value: any }[]): Promise<boolean> {
+    try {
+      const response = await fetch('/api/todo/batch', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          field, 
+          todos: updates 
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success(result.message || "批量更新成功");
+        return true;
+      } else {
+        toast.error(result.error || "批量更新失败");
+        return false;
+      }
+    } catch (error) {
+      console.error("批量更新待办事项失败:", error);
+      toast.error("批量更新待办事项时出错");
+      return false;
+    }
+  }
+
+  // 批量更新待办事项状态
+  async function batchUpdateStatus(status: boolean, todoIds: string[]): Promise<boolean> {
+    try {
+      const response = await fetch('/api/todo/batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          status, 
+          todoIds 
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success(result.message || "批量更新状态成功");
+        return true;
+      } else {
+        toast.error(result.error || "批量更新状态失败");
+        return false;
+      }
+    } catch (error) {
+      console.error("批量更新待办事项状态失败:", error);
+      toast.error("批量更新待办事项状态时出错");
+      return false;
     }
   }
 
@@ -84,17 +167,26 @@ export function DailyPlanning({
 
     // 获取所有选中的待办事项
     const todosToUpdate = incompleteTodos
-      .filter(({ todo }) => selectedTodos.includes(todo.id))
-      .map(({ todo }) => ({
-        ...todo,
-        planned_date: new Date().toISOString().split('T')[0], // 设置为今天
-        priority: priority
+      .filter((todo) => selectedTodos.includes(todo.id))
+      .map((todo) => ({
+        id: todo.id,
+        value: new Date().toISOString().split('T')[0] // 设置为今天
       }));
 
-    const success = await onBatchUpdateTodos(todosToUpdate);
-    if (success) {
-      setActiveTab("today");
-      setSelectedTodos([]);
+    // 先更新计划日期
+    const dateSuccess = await batchUpdateField("plannedDate", todosToUpdate);
+    
+    if (dateSuccess) {
+      // 然后更新优先级
+      const prioritySuccess = await batchUpdateField("priority", todosToUpdate.map(todo => ({
+        id: todo.id,
+        value: priority
+      })));
+      
+      if (prioritySuccess) {
+        setActiveTab("today");
+        setSelectedTodos([]);
+      }
     }
   }
 
@@ -104,15 +196,14 @@ export function DailyPlanning({
       return;
     }
 
-    // 获取所有选中的待办事项
-    const todosToUpdate = todos
-      .filter(({ todo }) => selectedTodos.includes(todo.id))
-      .map(({ todo }) => ({
-        ...todo,
-        priority: priority
-      }));
-
-    const success = await onBatchUpdateTodos(todosToUpdate);
+    // 批量更新优先级
+    const success = await batchUpdateField("priority", 
+      selectedTodos.map(id => ({
+        id: String(id),
+        value: priority
+      }))
+    );
+    
     if (success) {
       setSelectedTodos([]);
     }
@@ -124,16 +215,9 @@ export function DailyPlanning({
       return;
     }
 
-    // 获取所有选中的待办事项
-    const todosToUpdate = todos
-      .filter(({ todo }) => selectedTodos.includes(todo.id))
-      .map(({ todo }) => ({
-        ...todo,
-        status: "completed",
-        completed_at: new Date().toISOString()
-      }));
-
-    const success = await onBatchUpdateTodos(todosToUpdate);
+    // 批量更新状态为已完成
+    const success = await batchUpdateStatus(true, selectedTodos.map(id => String(id)));
+    
     if (success) {
       setSelectedTodos([]);
     }
@@ -191,50 +275,124 @@ export function DailyPlanning({
                     >
                       {selectedTodos.length === incompleteTodos.length ? "取消全选" : "全选"}
                     </Button>
-
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBatchMoveTodayWithPriority("urgent")}
-                        className="flex items-center gap-1"
-                      >
-                        <TodoPriority priority="urgent" showLabel={false} />
-                        移至今日
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBatchMoveTodayWithPriority("high")}
-                        className="flex items-center gap-1"
-                      >
-                        <TodoPriority priority="high" showLabel={false} />
-                        移至今日
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBatchMoveTodayWithPriority("medium")}
-                        className="flex items-center gap-1"
-                      >
-                        <TodoPriority priority="medium" showLabel={false} />
-                        移至今日
-                      </Button>
-                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    {incompleteTodos.map((todo) => (
-                      <TodoItem
-                        key={todo.id}
-                        todo={todo}
-                        tags={todo.tags}
-                        selected={selectedTodos.includes(todo.id)}
-                        onSelect={(selected) => handleSelectTodo(todo.id, selected)}
-                        onUpdate={onUpdateTodo}
-                      />
-                    ))}
-                  </div>
+                  <Tabs defaultValue="all">
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="all" className="flex items-center gap-1">
+                        <CalendarIcon className="h-4 w-4" />
+                        全部 ({incompleteTodos.length})
+                      </TabsTrigger>
+                      {['urgent', 'high', 'medium', 'low'].map(priority => {
+                        const count = incompleteTodos.filter(todo => todo.priority === priority).length;
+                        if (count === 0) return null;
+                        return (
+                          <TabsTrigger key={priority} value={priority} className="flex items-center gap-1">
+                            <TodoPriority priority={priority} showLabel={false} />
+                            {priority === 'urgent' ? '紧急' : 
+                             priority === 'high' ? '重要' : 
+                             priority === 'medium' ? '普通' : '低优先级'} 
+                            ({count})
+                          </TabsTrigger>
+                        );
+                      })}
+                    </TabsList>
+
+                    <TabsContent value="all" className="space-y-4">
+                      {['urgent', 'high', 'medium', 'low'].map(priority => {
+                        const priorityTodos = incompleteTodos.filter(todo => todo.priority === priority);
+                        if (priorityTodos.length === 0) return null;
+                        
+                        return (
+                          <div key={priority} className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <h3 className={`text-sm font-medium px-3 py-2 rounded-md inline-flex items-center gap-2
+                                ${priority === 'urgent' ? 'bg-red-100 text-red-800' : 
+                                  priority === 'high' ? 'bg-orange-100 text-orange-800' : 
+                                  priority === 'medium' ? 'bg-blue-100 text-blue-800' : 
+                                  'bg-gray-100 text-gray-800'}`}>
+                                <TodoPriority priority={priority} showLabel={false} />
+                                {priority === 'urgent' ? '紧急' : 
+                                 priority === 'high' ? '重要' : 
+                                 priority === 'medium' ? '普通' : '低优先级'} 
+                                ({priorityTodos.length})
+                              </h3>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleBatchMoveTodayWithPriority(priority)}
+                                className="flex items-center gap-1"
+                              >
+                                <SunIcon className="h-3 w-3" />
+                                移至今日
+                              </Button>
+                            </div>
+                            <div className="space-y-2 ml-2">
+                              {priorityTodos.map((todo) => (
+                                <TodoItem
+                                  key={todo.id}
+                                  todo={todo}
+                                  tags={todo.tags}
+                                  selected={selectedTodos.includes(todo.id)}
+                                  onSelect={(selected) => handleSelectTodo(todo.id, selected)}
+                                  onUpdate={updateTodo}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </TabsContent>
+
+                    {['urgent', 'high', 'medium', 'low'].map(priority => {
+                      const priorityTodos = incompleteTodos.filter(todo => todo.priority === priority);
+                      if (priorityTodos.length === 0) return null;
+                      
+                      return (
+                        <TabsContent key={priority} value={priority} className="space-y-4">
+                          <div className="flex justify-between items-center mb-4">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const todoIds = priorityTodos.map(todo => todo.id);
+                                if (todoIds.every(id => selectedTodos.includes(id))) {
+                                  setSelectedTodos(selectedTodos.filter(id => !todoIds.includes(id)));
+                                } else {
+                                  setSelectedTodos([...new Set([...selectedTodos, ...todoIds])]);
+                                }
+                              }}
+                            >
+                              {priorityTodos.every(todo => selectedTodos.includes(todo.id)) ? "取消全选" : "全选"}
+                            </Button>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleBatchMoveTodayWithPriority(priority)}
+                              className="flex items-center gap-1"
+                            >
+                              <SunIcon className="h-3 w-3" />
+                              移至今日
+                            </Button>
+                          </div>
+
+                          <div className="space-y-2">
+                            {priorityTodos.map((todo) => (
+                              <TodoItem
+                                key={todo.id}
+                                todo={todo}
+                                tags={todo.tags}
+                                selected={selectedTodos.includes(todo.id)}
+                                onSelect={(selected) => handleSelectTodo(todo.id, selected)}
+                                onUpdate={updateTodo}
+                              />
+                            ))}
+                          </div>
+                        </TabsContent>
+                      );
+                    })}
+                  </Tabs>
                 </>
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
@@ -329,17 +487,39 @@ export function DailyPlanning({
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    {todos.map((todo) => (
-                      <TodoItem
-                        key={todo.id}
-                        todo={todo}
-                        tags={todo.tags}
-                        selected={selectedTodos.includes(todo.id)}
-                        onSelect={(selected) => handleSelectTodo(todo.id, selected)}
-                        onUpdate={onUpdateTodo}
-                      />
-                    ))}
+                  <div className="space-y-4">
+                    {/* 按优先级分组展示 */}
+                    {['urgent', 'high', 'medium', 'low'].map(priority => {
+                      const priorityTodos = todos.filter(todo => todo.priority === priority);
+                      if (priorityTodos.length === 0) return null;
+                      
+                      return (
+                        <div key={priority} className="space-y-2">
+                          <h3 className={`text-sm font-medium px-2 py-1 rounded-md inline-block
+                            ${priority === 'urgent' ? 'bg-red-100 text-red-800' : 
+                              priority === 'high' ? 'bg-orange-100 text-orange-800' : 
+                              priority === 'medium' ? 'bg-blue-100 text-blue-800' : 
+                              'bg-gray-100 text-gray-800'}`}>
+                            {priority === 'urgent' ? '紧急' : 
+                             priority === 'high' ? '重要' : 
+                             priority === 'medium' ? '普通' : '低优先级'} 
+                            ({priorityTodos.length})
+                          </h3>
+                          <div className="space-y-2 ml-2">
+                            {priorityTodos.map((todo) => (
+                              <TodoItem
+                                key={todo.id}
+                                todo={todo}
+                                tags={todo.tags}
+                                selected={selectedTodos.includes(todo.id)}
+                                onSelect={(selected) => handleSelectTodo(todo.id, selected)}
+                                onUpdate={updateTodo}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               ) : (

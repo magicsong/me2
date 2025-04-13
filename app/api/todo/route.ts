@@ -13,34 +13,35 @@ export async function GET(req: NextRequest) {
     if (!userId) {
       return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
     }
-    
+
     const searchParams = req.nextUrl.searchParams;
     const id = searchParams.get('id');
     const planedDate = searchParams.get('date');
-    
+    const includePrevious = searchParams.get('includePrevious') === 'true';
+
     // 如果提供了 ID，获取特定的待办事项
     if (id) {
       const todo = await todoHandler.getById(id);
-      
+
       if (!todo) {
         return NextResponse.json({ success: false, error: '待办事项未找到' }, { status: 404 });
       }
-      
+
       // 检查待办事项是否属于当前用户
       if ((todo as TodoBO).userId !== userId) {
         return NextResponse.json({ success: false, error: '无权访问此待办事项' }, { status: 403 });
       }
-      
+
       return NextResponse.json({ success: true, data: todo });
     }
-    
+
     // 如果提供了日期参数，获取该日期的待办事项
     if (planedDate) {
       const handler = todoHandler as TodoApiHandler;
-      const todos = await handler.getTodosByDate(planedDate, userId);
+      const todos = await handler.getTodosByDate(planedDate, userId, includePrevious);
       return NextResponse.json({ success: true, data: todos });
     }
-    
+
     // 默认获取用户的所有待办事项
     const todos = await todoHandler.getAll(userId);
     return NextResponse.json({ success: true, data: todos });
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
     }
     const { data, autoGenerate, userPrompt } = await req.json();
-    
+
     // 确保待办事项关联到当前用户
     if (data) {
       if (Array.isArray(data)) {
@@ -72,20 +73,20 @@ export async function POST(req: NextRequest) {
         data.userId = userId;
       }
     }
-    
+
     const result = await todoHandler.handleCreate({
       data,
       autoGenerate,
       userPrompt
     });
-    
+
     if (!result.success) {
       return NextResponse.json(
         { success: false, error: result.error || '创建待办事项失败' },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(result);
   } catch (error) {
     console.error('创建待办事项失败:', error);
@@ -104,13 +105,13 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
     }
     const { data, autoGenerate, userPrompt } = await req.json();
-    
+
     // 验证待办事项是否属于当前用户
     if (data) {
       if (Array.isArray(data)) {
         for (const item of data) {
           if (!item.id) continue;
-          
+
           const todo = await todoHandler.getById(String(item.id));
           if (!todo || (todo as TodoBO).userId !== userId) {
             return NextResponse.json(
@@ -129,20 +130,20 @@ export async function PUT(req: NextRequest) {
         }
       }
     }
-    
+
     const result = await todoHandler.handleUpdate({
       data,
       autoGenerate,
       userPrompt
     });
-    
+
     if (!result.success) {
       return NextResponse.json(
         { success: false, error: result.error || '更新待办事项失败' },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(result);
   } catch (error) {
     console.error('更新待办事项失败:', error);
@@ -162,14 +163,14 @@ export async function DELETE(req: NextRequest) {
     }
     const searchParams = req.nextUrl.searchParams;
     const id = searchParams.get('id');
-    
+
     if (!id) {
       return NextResponse.json(
         { success: false, error: '必须提供待办事项 ID' },
         { status: 400 }
       );
     }
-    
+
     // 验证待办事项是否属于当前用户
     const todo = await todoHandler.getById(id);
     if (!todo) {
@@ -178,17 +179,17 @@ export async function DELETE(req: NextRequest) {
         { status: 404 }
       );
     }
-    
+
     if ((todo as TodoBO).userId !== userId) {
       return NextResponse.json(
         { success: false, error: '无权删除此待办事项' },
         { status: 403 }
       );
     }
-    
+
     // 删除待办事项
     await (todoHandler as any).persistenceService.delete(id);
-    
+
     return NextResponse.json({ success: true, message: '待办事项已删除' });
   } catch (error) {
     console.error('删除待办事项失败:', error);

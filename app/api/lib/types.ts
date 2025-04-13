@@ -103,7 +103,7 @@ export interface PersistenceService<T> {
   /**
    * 批量更新记录
    */
-  updateMany(updates: { id: string | number; data: Partial<T> }[]): Promise<T[]>;
+  updateMany(filter: RepoFilterCondition<T>, data: Partial<T>): Promise<T[]>;
   
   /**
    * 删除记录
