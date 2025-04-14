@@ -3,6 +3,8 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { 
   SunIcon, 
   ArrowRightIcon, 
@@ -12,7 +14,8 @@ import {
   ClockIcon,
   CheckIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  SparklesIcon
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,6 +28,7 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
   const [isCompleted, setIsCompleted] = useState(false);
   const [intention, setIntention] = useState("");
   const [aiGeneratedTodos, setAiGeneratedTodos] = useState<string[]>([]);
+  const [updateExisting, setUpdateExisting] = useState(false);
   const [quadrantTasks, setQuadrantTasks] = useState({
     urgentImportant: "",
     notUrgentImportant: "",
@@ -76,22 +80,77 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
     setCurrentStep(1);
   };
 
-  const simulateAiGeneration = () => {
-    // 模拟AI生成TODO列表
+  const simulateAiGeneration = async () => {
+    // 检查intention是否为空
+    if (!intention.trim()) {
+      toast.error("请先填写今日规划后再生成任务");
+      return;
+    }
+
+    // 如果需要更新现有待办，先获取今天的待办事项
+    let existingTodos = [];
+    if (updateExisting) {
+      try {
+        // 获取今天的日期
+        const today = new Date().toISOString().split('T')[0];
+        const response = await fetch(`/api/todo?planned_date=${today}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.data) {
+            existingTodos = Array.isArray(data.data) ? data.data : [];
+          }
+        }
+      } catch (error) {
+        console.error("获取现有待办事项失败:", error);
+        // 继续执行，但不包含现有待办
+      }
+    }
+
+    // 调用真实的API生成TODO列表
     toast.promise(
-      new Promise(resolve => setTimeout(resolve, 1500)),
-      {
-        loading: '正在生成任务清单...',
-        success: () => {
-          setAiGeneratedTodos([
-            "完成项目A的开发任务",
-            "回复重要邮件",
-            "准备明天的会议材料",
-            "每日代码审核"
-          ]);
-          return "任务清单已生成!";
+      fetch('/api/todo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        error: "生成失败，请重试"
+        body: JSON.stringify({
+          isAIGeneration: true,
+          isBatch: true,
+          userPrompt: intention,
+          batchSize: 4,
+          generateBothCreatedAndUpdated: updateExisting,
+          ...(updateExisting && existingTodos.length > 0 ? { data: existingTodos } : {})
+        }),
+      })
+      .then(response => {
+        if (!response.ok) {
+          console.log(response);
+          throw new Error('网络请求失败');
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (!data.success) {
+          throw new Error(data.error || '生成失败');
+        }
+        
+        // 提取生成的待办事项标题
+        const todoTitles = data.data.created.map(todo => todo.title);
+        
+        // 如果有更新的待办事项，也显示这些
+        if (updateExisting && data.data.updated && data.data.updated.length > 0) {
+          const updatedTitles = data.data.updated.map(todo => `[更新] ${todo.title}`);
+          setAiGeneratedTodos([...todoTitles, ...updatedTitles]);
+          return { new: todoTitles.length, updated: updatedTitles.length };
+        } else {
+          setAiGeneratedTodos(todoTitles);
+          return { new: todoTitles.length, updated: 0 };
+        }
+      }),
+      {
+        loading: '正在使用AI生成任务清单...',
+        success: (result) => `成功生成${result.new}个新任务${result.updated > 0 ? `，更新${result.updated}个任务` : ''}!`,
+        error: (err) => `生成失败: ${err.message}`
       }
     );
   };
@@ -215,12 +274,23 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
                   </ul>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  onClick={simulateAiGeneration}
-                >
-                  AI生成任务建议
-                </Button>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="update-existing"
+                      checked={updateExisting}
+                      onCheckedChange={setUpdateExisting}
+                    />
+                    <Label htmlFor="update-existing">同时更新今日现有待办</Label>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={simulateAiGeneration}
+                  >
+                    <SparklesIcon className="mr-2 h-4 w-4" />
+                    AI生成任务建议
+                  </Button>
+                </div>
               )}
               
               <div className="flex justify-between">

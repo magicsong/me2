@@ -72,9 +72,15 @@ export interface IApiHandler<T, BO extends BusinessObject = any> {
     /**
      * 使用AI根据用户提示批量生成多个BO对象
      * @param request 请求对象，其中 userPrompt 字段必填，batchSize 字段用于指定生成数量
-     * @returns 返回多个AI生成的BO对象(不含ID)
+     *                如果 generateBothCreatedAndUpdated 为 true，则必须提供 data 字段作为更新基础
+     * @returns 返回区分新生成和更新的BO对象集合，created数组包含新生成的项，updated数组包含更新的现有项
+     *          - 当 generateBothCreatedAndUpdated 为 false 时，只返回 created 数组中的新对象
+     *          - 当 generateBothCreatedAndUpdated 为 true 时，同时返回 created 和 updated 数组
      */
-    generateBatchWithAI(request: BaseRequest<Partial<BO>>): Promise<BaseResponse<BO[]>>;
+    generateBatchWithAI(request: BaseBatchRequest<BO>): Promise<BaseResponse<{
+        created: Partial<BO>[];
+        updated: BO[];
+    }>>;
 
     /**
      * 处理删除请求 - 删除单个资源

@@ -36,7 +36,7 @@ export default function DailyStartPage() {
     const lastWelcomeDate = localStorage.getItem("lastWelcomeDate");
 
     if (lastWelcomeDate === today) {
-      setShowWelcome(true);
+      setShowWelcome(false);
     }
   }, []);
 

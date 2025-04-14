@@ -37,10 +37,10 @@ export const createCacheChain = async <T>(chainFunc: () => Promise<T>, cacheKey:
   return result;
 };
 
-export const callLLMOnce = async function (promptTemplate: string, context: any, cacheKey: string): Promise<AIMessageChunk> {
+export const callLLMOnce = async function (promptTemplate: PromptTemplate, context: any, cacheKey: string): Promise<AIMessageChunk> {
 
   const chain = RunnableSequence.from([
-    PromptTemplate.fromTemplate(promptTemplate),
+    promptTemplate,
     chatModel,
   ]);
   const result = await createCacheChain(

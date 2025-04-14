@@ -1,3 +1,5 @@
+import { PromptTemplate } from "@langchain/core/prompts";
+
 /**
  * 基础请求接口 - 处理单个对象
  */
@@ -16,6 +18,7 @@ export interface BaseBatchRequest<T> {
   autoGenerate?: boolean; // 是否需要LLM自动生成
   batchSize?: number; // 自动生成时的批量大小
   userPrompt?: string; // 用户给大模型的提示
+  generateBothCreatedAndUpdated?: boolean; // 是否需要同时生成新建和更新的对象，如果是，必须传入data
 }
 
 /**
@@ -80,8 +83,8 @@ export interface FilterOptions {
  * 提示构建器接口
  */
 export interface PromptBuilder<T> {
-  buildCreatePrompt(): string;
-  buildUpdatePrompt(): string;
+  buildCreatePrompt(): PromptTemplate;
+  buildUpdatePrompt(): PromptTemplate;
 }
 
 /**
@@ -96,6 +99,17 @@ export interface OutputParser<T> {
   parseCreateOutputArray?(output: string): Partial<T>[];
   parseUpdateOutputArray?(output: string, existingDataArray: T[]): Partial<T>[];
   parseArray?(output: string): Partial<T>[]; // 通用数组解析方法
+  
+  /**
+   * 解析批量AI生成结果，并区分新创建和更新的项
+   * @param output AI生成的原始输出
+   * @param existingDataArray 可选的现有数据数组，用于确定哪些是更新项
+   * @returns 包含新创建和已更新项分类的结果对象
+   */
+  parseBatchWithUpdates?(output: string, existingDataArray?: T[]): {
+    created: Partial<T>[];
+    updated: T[];
+  };
 }
 
 /**

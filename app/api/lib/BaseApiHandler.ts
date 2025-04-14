@@ -2,18 +2,19 @@ import { callLLMOnce } from '@/lib/langchain/chains';
 import { BaseRequest, BaseResponse, BusinessObject, FilterOptions, ObjectConverter, OutputParser, PatchRequest, BatchPatchRequest, BaseBatchRequest, PromptBuilder } from './types';
 import { IApiHandler } from './interfaces/IApiHandler';
 import { FilterCondition, PaginationOptions, PersistenceService } from '@/lib/db/intf';
+import { PromptTemplate } from '@langchain/core/prompts';
 
 /**
  * 通用API处理基类，实现IApiHandler接口
  */
-export abstract class BaseApiHandler<T, BO extends BusinessObject = any> 
+export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
     implements ObjectConverter<BO, T>, IApiHandler<T, BO> {
     constructor(
         protected persistenceService: PersistenceService<T>,
-        protected promptBuilder: PromptBuilder<T>,
-        protected outputParser: OutputParser<T>
+        protected promptBuilder: PromptBuilder<BO>,
+        protected outputParser: OutputParser<BO>
     ) { }
-    
+
     // 抽象方法：验证输入
     protected abstract validateInput(data: any): boolean;
 
@@ -39,7 +40,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
     getPersistenceService(): PersistenceService<T> {
         return this.persistenceService;
     }
-    
+
     /**
      * 获取提示构建器实例
      * @returns 提示构建器实例
@@ -47,7 +48,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
     getPromptBuilder(): PromptBuilder<T> {
         return this.promptBuilder;
     }
-    
+
     /**
      * 获取输出解析器实例
      * @returns 输出解析器实例
@@ -130,11 +131,11 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
 
             // 收集所有要更新的项目
             const itemsToUpdate = request.data.filter(item => item.id);
-            
+
             if (itemsToUpdate.length === 0) {
                 return { success: false, error: '没有提供有效的更新项目' };
             }
-            
+
             // 转换为数据对象数组
             const dataObjectsToUpdate = itemsToUpdate.map(item => {
                 const dataObj = this.toDataObject(item);
@@ -142,13 +143,13 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 dataObj.id = item.id;
                 return dataObj as Partial<T>;
             });
-            
+
             // 调用persistenceService的updateMany方法
             const updatedItems = await this.persistenceService.updateMany(dataObjectsToUpdate);
-            
+
             // 转换回业务对象
             const businessResults = this.toBusinessObjects(updatedItems);
-            
+
             return {
                 success: businessResults.length > 0,
                 data: businessResults,
@@ -184,10 +185,10 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
 
             // 将业务字段转换为数据字段
             const dataFields = this.toDataObject(request.fields as any);
-            
+
             // 更新指定字段
             const updatedItem = await this.persistenceService.update(request.id, dataFields);
-            
+
             // 转换回业务对象
             return { success: true, data: this.toBusinessObject(updatedItem) };
         } catch (error) {
@@ -197,7 +198,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             };
         }
     }
-    
+
     /**
      * 处理批量部分更新请求 - 将多个资源的相同字段更新为相同值
      */
@@ -209,20 +210,20 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
 
             // 将业务字段转换为数据字段
             const dataFields = this.toDataObject(request.fields as any);
-            
+
             // 创建过滤条件
             const filter: FilterCondition<T> = {
                 id: { in: request.id as any }
             } as FilterCondition<T>;
-            
+
             // 如果提供了userId限制
             if (request.userId) {
                 (filter as any).userId = request.userId;
             }
-            
+
             // 使用patchMany方法批量更新
             const updatedItems = await this.persistenceService.patchMany(filter, dataFields as Partial<T>);
-            
+
             // 转换回业务对象返回
             return { success: true, data: this.toBusinessObjects(updatedItems) };
         } catch (error) {
@@ -250,23 +251,23 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
 
             // 生成提示
             const prompt = this.promptBuilder.buildCreatePrompt();
-            
+
             // 调用LLM生成内容
-            const llmOutput = await this.generateLLMContent(prompt, { 
-                userPrompt: request.userPrompt, 
-                ...partialData 
+            const llmOutput = await this.generateLLMContent(prompt, {
+                userPrompt: request.userPrompt,
+                ...partialData
             });
-            
+
             // 解析生成的内容
             const generatedData = this.outputParser.parseCreateOutput(llmOutput);
-            
+
             // 这里不保存到数据库，只返回生成的对象
             // 转换为业务对象并返回
             const businessObject = this.toBusinessObject(generatedData as T);
-            
+
             // 确保没有ID
             delete businessObject.id;
-            
+
             return {
                 success: true,
                 data: businessObject
@@ -278,86 +279,83 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             };
         }
     }
-    
+
     /**
      * 使用AI根据用户提示批量生成多个BO对象
      */
-    async generateBatchWithAI(request: BaseRequest<Partial<BO>>): Promise<BaseResponse<BO[]>> {
+    async generateBatchWithAI(request: BaseBatchRequest<BO>): Promise<BaseResponse<{
+        created: Partial<BO>[];
+        updated: BO[];
+    }>> {
         try {
             if (!request.userPrompt) {
                 return { success: false, error: 'userPrompt字段必填' };
             }
 
             const batchSize = request.batchSize || 3; // 默认生成3个
-            const results: BO[] = [];
+            const result = {
+                created: [] as Partial<BO>[],
+                updated: [] as BO[]
+            };
 
-            // 获取部分数据作为提示基础
-            let partialData: Partial<T> | undefined;
-            if (request.data && !Array.isArray(request.data)) {
-                partialData = this.toDataObject(request.data);
+            // 检查是否同时需要生成新对象和更新现有对象
+            const generateBoth = !!request.generateBothCreatedAndUpdated;
+
+            // 如果需要同时生成和更新，必须提供data作为更新基础
+            if (generateBoth && (!request.data || !Array.isArray(request.data) || request.data.length === 0)) {
+                return { success: false, error: '当generateBothCreatedAndUpdated为true时，必须提供data数组作为更新基础' };
             }
 
-            // 尝试使用批量生成
-            if (typeof this.outputParser.parseCreateOutputArray === 'function') {
-                // 生成提示
+            // 优先使用parseBatchWithUpdates处理
+            if (typeof this.outputParser.parseBatchWithUpdates === 'function') {
                 const prompt = this.promptBuilder.buildCreatePrompt();
-                
-                // 添加批量生成的指示
-                const batchPrompt = `${prompt}\n请生成${batchSize}个不同的对象，以JSON数组格式返回。`;
-                
+
+                // 准备现有数据
+                const existingData = request.data
+
                 // 调用LLM生成内容
-                const llmOutput = await this.generateLLMContent(batchPrompt, { 
-                    userPrompt: request.userPrompt, 
+                const llmOutput = await this.generateLLMContent(prompt, {
+                    userPrompt: request.userPrompt,
                     batchSize,
-                    ...partialData 
+                    existingData,
+                    generateBoth
                 });
-                
-                // 解析生成的批量内容
-                const generatedItems = this.outputParser.parseCreateOutputArray(llmOutput);
-                
+
+                // 使用parseBatchWithUpdates解析结果
+                const parsedResults = this.outputParser.parseBatchWithUpdates(llmOutput, existingData);
+
                 // 转换为业务对象
-                for (const item of generatedItems) {
-                    const businessObject = this.toBusinessObject(item as T);
-                    delete businessObject.id; // 确保没有ID
-                    results.push(businessObject);
-                    
-                    // 如果已经生成了足够的数量，就停止
-                    if (results.length >= batchSize) break;
+                if (parsedResults.created && parsedResults.created.length > 0) {
+                    for (const item of parsedResults.created) {
+                        delete item.id; // 确保新创建的项没有ID
+                        result.created.push(item);
+                    }
                 }
-            }
-            
-            // 如果批量生成失败或不支持，则逐个生成
-            if (results.length === 0) {
-                for (let i = 0; i < batchSize; i++) {
-                    // 生成提示
-                    const prompt = this.promptBuilder.buildCreatePrompt();
-                    
-                    // 调用LLM生成内容
-                    const llmOutput = await this.generateLLMContent(prompt, { 
-                        userPrompt: `${request.userPrompt} (生成第${i+1}个，请确保与之前生成的不同)`, 
-                        ...partialData 
-                    });
-                    
-                    // 解析生成的内容
-                    const generatedData = this.outputParser.parseCreateOutput(llmOutput);
-                    
-                    // 转换为业务对象
-                    const businessObject = this.toBusinessObject(generatedData as T);
-                    delete businessObject.id; // 确保没有ID
-                    results.push(businessObject);
+
+                if (generateBoth && parsedResults.updated && parsedResults.updated.length > 0) {
+                    result.updated = parsedResults.updated
                 }
+            } else {
+                // 不支持parseBatchWithUpdates时直接报错
+                return {
+                    success: false,
+                    error: '当前解析器不支持批量生成和更新功能，请实现parseBatchWithUpdates方法',
+                    data: { created: [], updated: [] }
+                };
             }
-            
+
             return {
-                success: results.length > 0,
-                data: results,
-                generatedCount: results.length,
-                error: results.length === 0 ? '未能生成任何项目' : undefined
+                success: (result.created.length > 0 || result.updated.length > 0),
+                data: result,
+                generatedCount: result.created.length + result.updated.length,
+                error: (result.created.length === 0 && result.updated.length === 0) ?
+                    '未能生成任何项目' : undefined
             };
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error.message : '使用AI批量生成资源失败'
+                error: error instanceof Error ? error.message : '使用AI批量生成资源失败',
+                data: { created: [], updated: [] }
             };
         }
     }
@@ -381,7 +379,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 const prompt = this.promptBuilder.buildCreatePrompt();
                 const llmOutput = await this.generateLLMContent(prompt, { userPrompt: request.userPrompt, ...partialData });
                 const generatedData = this.outputParser.parseCreateOutput(llmOutput);
-                
+
                 // 存储生成的数据
                 const createdItem = await this.persistenceService.create(generatedData as T);
                 results.push(createdItem);
@@ -404,7 +402,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
     /**
      * 调用LLM生成内容
      */
-    protected async generateLLMContent(prompt: string, context: any): Promise<string> {
+    protected async generateLLMContent(prompt: PromptTemplate, context: any): Promise<string> {
         const cacheKey = this.resourceName() + "-" + JSON.stringify(context);
         const llmResponse = await callLLMOnce(prompt, context, cacheKey);
         return llmResponse.content as string;
@@ -420,19 +418,19 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             if (typeof this.promptBuilder.build !== 'function') {
                 throw new Error('promptBuilder未实现build方法');
             }
-            
+
             // 检查outputParser是否实现了parse方法
             if (typeof this.outputParser.parse !== 'function') {
                 throw new Error('outputParser未实现parse方法');
             }
-            
+
             // 获取通用提示
             const prompt = this.promptBuilder.build();
-            
+
             // 生成内容
             const cacheKey = this.resourceName() + "-zero-param-" + JSON.stringify(context || {});
             const llmResponse = await callLLMOnce(prompt, context || {}, cacheKey);
-            
+
             // 解析内容
             return this.outputParser.parse(llmResponse.content as string);
         } catch (error) {
@@ -521,7 +519,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             // 如果持久化服务支持分页
             if (typeof this.persistenceService.getPageWithFilters === 'function') {
                 const result = await this.persistenceService.getPageWithFilters(paginationOptions, filter, userId);
-                
+
                 return {
                     items: this.toBusinessObjects(result.items),
                     total: result.total,
@@ -532,13 +530,13 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             } else {
                 // 降级处理：获取所有项目然后手动分页
                 const items = await this.persistenceService.getAll(userId);
-                
+
                 const total = items.length;
-                
+
                 // 手动分页
                 const startIndex = (page - 1) * pageSize;
                 const paginatedItems = items.slice(startIndex, startIndex + pageSize);
-                
+
                 // 计算总页数
                 const totalPages = Math.ceil(total / pageSize);
 
@@ -580,11 +578,11 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             if (typeof this.persistenceService.getWithFilters !== 'function') {
                 throw new Error(`${this.resourceName()}持久化服务不支持过滤查询`);
             }
-            
+
             const dbFilters = this.convertFilters(filters)
             console.log(dbFilters)
             const result = await this.persistenceService.getWithFilters(dbFilters, userId);
-            
+
             return {
                 items: this.toBusinessObjects(result.items),
                 total: result.total,
@@ -631,7 +629,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 sortBy: filters.sortBy,
                 sortOrder: filters.sortDirection
             };
-            
+
             // 转换为持久层的过滤条件
             const filterCondition: FilterCondition<T> = this.convertFilters(filters);
             console.log(filterCondition)
@@ -645,7 +643,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 const result = await this.persistenceService.getPageWithFilters(
                     paginationOptions, filterCondition, userId
                 );
-                
+
                 return {
                     items: this.toBusinessObjects(result.items),
                     total: result.total,
@@ -655,7 +653,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                     metadata: result.metadata
                 };
             }
-            
+
             // 如果两种过滤方法都不支持，则抛出错误
             throw new Error(`${this.resourceName()}持久化服务不支持过滤查询`);
         } catch (error) {
@@ -669,7 +667,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             };
         }
     }
-    
+
     /**
      * 转换字段名称，从API层命名方式到数据库层命名方式
      * 默认实现是将小驼峰转为下划线方式
@@ -692,13 +690,13 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             for (const condition of filters.conditions) {
                 // 转换字段名
                 const dbFieldName = this.convertFieldName(condition.field);
-                
+
                 // 处理eq操作符，这会覆盖之前的任何条件
                 if (condition.operator === 'eq') {
                     result[dbFieldName] = condition.value;
                     continue;
                 }
-                
+
                 // 处理其他操作符
                 // 如果字段尚未初始化或不是对象，需要初始化为对象
                 if (!result[dbFieldName] || typeof result[dbFieldName] !== 'object') {
@@ -708,7 +706,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                     }
                     result[dbFieldName] = {};
                 }
-                
+
                 // 根据操作符设置条件
                 switch (condition.operator) {
                     case 'neq':
@@ -735,12 +733,12 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 }
             }
         }
-        
+
         // 处理排序字段
         if (filters.sortBy) {
             result.sortBy = this.convertFieldName(filters.sortBy);
         }
-        
+
         return result;
     }
 }
