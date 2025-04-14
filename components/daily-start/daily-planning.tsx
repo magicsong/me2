@@ -19,15 +19,17 @@ interface DailyPlanningProps {
   todos: TodoBO[];
   yesterdayTodos: TodoBO[];
   onChangeTab: () => void;
+  onDataRefresh: () => void; // 添加数据刷新回调
 }
 
 export function DailyPlanning({
   todos,
   yesterdayTodos,
-  onChangeTab
+  onChangeTab,
+  onDataRefresh
 }: DailyPlanningProps) {
   const [selectedTodos, setSelectedTodos] = useState<number[]>([]);
-  const [activeTab, setActiveTab] = useState("yesterday");
+  const [activeTab, setActiveTab] = useState("today");
 
   // 过滤未完成的昨日任务
   const incompleteTodos = yesterdayTodos.filter(
@@ -102,14 +104,21 @@ export function DailyPlanning({
   // 批量更新待办事项字段
   async function batchUpdateField(field: string, updates: { id: string; value: any }[]): Promise<boolean> {
     try {
-      const response = await fetch('/api/todo/batch', {
+      // 提取所有ID
+      const ids = updates.map(update => update.id);
+      
+      // 创建字段对象 - 注意：这假设所有记录更新为相同的值
+      // 如果每个记录值不同，后端需要支持这种格式
+      const fields = { [field]: updates[0].value };
+      
+      const response = await fetch('/api/todo', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          field, 
-          todos: updates 
+          id: ids,       // 批量更新的ID数组
+          fields: fields  // 要更新的字段和值
         }),
       });
       
@@ -173,20 +182,14 @@ export function DailyPlanning({
         value: new Date().toISOString().split('T')[0] // 设置为今天
       }));
 
-    // 先更新计划日期
-    const dateSuccess = await batchUpdateField("plannedDate", todosToUpdate);
+    // 更新计划日期
+    const success = await batchUpdateField("plannedDate", todosToUpdate);
     
-    if (dateSuccess) {
-      // 然后更新优先级
-      const prioritySuccess = await batchUpdateField("priority", todosToUpdate.map(todo => ({
-        id: todo.id,
-        value: priority
-      })));
-      
-      if (prioritySuccess) {
-        setActiveTab("today");
-        setSelectedTodos([]);
-      }
+    if (success) {
+      // 调用数据刷新回调，更新今日和昨日的任务数据
+      onDataRefresh();
+      setActiveTab("today");
+      setSelectedTodos([]);
     }
   }
 
@@ -254,15 +257,15 @@ export function DailyPlanning({
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="today">
+                <SunIcon className="mr-2 h-4 w-4" />
+                今日任务 ({todos.length})
+              </TabsTrigger>
               <TabsTrigger value="yesterday">
                 <CalendarIcon className="mr-2 h-4 w-4" />
                 昨日任务 ({incompleteTodos.length})
               </TabsTrigger>
-              <TabsTrigger value="today">
-                <SunIcon className="mr-2 h-4 w-4" />
-                今日任务 ({todos.length})
-              </TabsTrigger>
-            </TabsList>
+              </TabsList>
 
             <TabsContent value="yesterday" className="space-y-4">
               {incompleteTodos.length > 0 ? (

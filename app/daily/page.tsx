@@ -199,6 +199,12 @@ export default function DailyStartPage() {
     }
   }
 
+  // 用于刷新今日和昨日的待办事项数据
+  function handleDataRefresh() {
+    fetchTodos();
+    fetchYesterdayTodos();
+  }
+
   function handleStartDay() {
     setShowWelcome(false);
     localStorage.setItem("lastWelcomeDate", new Date().toDateString());
@@ -225,6 +231,7 @@ export default function DailyStartPage() {
             onUpdateTodo={handleUpdateTodo}
             onBatchUpdateTodos={handleBatchUpdateTodos}
             onChangeTab={() => setActiveTab("timeline")}
+            onDataRefresh={handleDataRefresh}
           />
         </TabsContent>
 

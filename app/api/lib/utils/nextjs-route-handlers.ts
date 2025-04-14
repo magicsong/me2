@@ -7,12 +7,12 @@ import { BaseRequest, BatchPatchRequest, BusinessObject, FilterOptions, PatchReq
  */
 function createApiResponse(success: boolean, data?: any, error?: string, status: number = 200) {
   const response: { success: boolean; data?: any; error?: string } = { success };
-  
+
   if (data !== undefined) {
     if (data && typeof data === 'object' && 'items' in data) {
       // 如果data包含items字段，将items作为response.data
       response.data = data.items;
-      
+
       // 将data中除了items以外的其他字段放在response根级别
       Object.entries(data).forEach(([key, value]) => {
         if (key !== 'items') {
@@ -24,11 +24,11 @@ function createApiResponse(success: boolean, data?: any, error?: string, status:
       response.data = data;
     }
   }
-  
+
   if (error) {
     response.error = error;
   }
-  
+
   return NextResponse.json(response, { status });
 }
 
@@ -39,63 +39,63 @@ function createApiResponse(success: boolean, data?: any, error?: string, status:
 function parseQueryParams(searchParams: URLSearchParams): FilterOptions {
   const filterOptions: FilterOptions = { conditions: [] };
   const operatorRegex = /^(.+)_(gte|lte|gt|lt|ne|in|nin|regex)$/;
-  
+
   // 处理特殊参数
   if (searchParams.has('sortBy')) {
     filterOptions.sortBy = searchParams.get('sortBy') || undefined;
   }
-  
+
   if (searchParams.has('sortDirection')) {
     const direction = searchParams.get('sortDirection');
     if (direction === 'asc' || direction === 'desc') {
       filterOptions.sortDirection = direction;
     }
   }
-  
+
   if (searchParams.has('limit')) {
     const limit = parseInt(searchParams.get('limit') || '0');
     if (!isNaN(limit) && limit > 0) {
       filterOptions.limit = limit;
     }
   }
-  
+
   if (searchParams.has('offset')) {
     const offset = parseInt(searchParams.get('offset') || '0');
     if (!isNaN(offset) && offset >= 0) {
       filterOptions.offset = offset;
     }
   }
-  
+
   // 映射运算符到FilterOperator类型
   const operatorMap = {
     'gte': 'gte',
     'lte': 'lte',
-    'gt': 'gt', 
+    'gt': 'gt',
     'lt': 'lt',
     'ne': 'neq',
     'in': 'in',
     'nin': 'neq', // 处理为neq+数组值
     'regex': 'like'
   };
-  
+
   // 处理所有查询参数
   searchParams.forEach((value, key) => {
     // 跳过特定的参数和已处理的特殊参数
     if (['id', 'page', 'pageSize', 'userId', 'filters', 'sortBy', 'sortDirection', 'limit', 'offset'].includes(key)) {
       return;
     }
-    
+
     // 检查是否包含运算符
     const operatorMatch = key.match(operatorRegex);
     if (operatorMatch) {
       const [, fieldName, operator] = operatorMatch;
-      
+
       // 映射到支持的运算符
       const mappedOperator = operatorMap[operator] as FilterOperator;
       if (!mappedOperator) return;
-      
+
       let processedValue: any = value;
-      
+
       // 根据运算符处理值类型
       switch (operator) {
         case 'in':
@@ -113,12 +113,12 @@ function parseQueryParams(searchParams: URLSearchParams): FilterOptions {
             processedValue = [value];
           }
           break;
-          
+
         case 'regex':
           // 正则表达式 - 转为like操作
           processedValue = value;
           break;
-          
+
         case 'gte':
         case 'lte':
         case 'gt':
@@ -141,7 +141,7 @@ function parseQueryParams(searchParams: URLSearchParams): FilterOptions {
           }
           break;
       }
-      
+
       // 添加到条件数组
       filterOptions.conditions!.push({
         field: fieldName,
@@ -151,12 +151,12 @@ function parseQueryParams(searchParams: URLSearchParams): FilterOptions {
     } else {
       // 处理没有运算符的普通参数 (默认为eq操作符)
       let processedValue = value;
-      
+
       if (value === 'true') {
         processedValue = true;
       } else if (value === 'false') {
         processedValue = false;
-      } 
+      }
       // 处理日期参数
       else if (key === 'date' || key.endsWith('Date') || key.endsWith('Time')) {
         try {
@@ -170,7 +170,7 @@ function parseQueryParams(searchParams: URLSearchParams): FilterOptions {
       else if (!isNaN(Number(value)) && value.trim() !== '') {
         processedValue = Number(value);
       }
-      
+
       // 添加到条件数组
       filterOptions.conditions!.push({
         field: key,
@@ -179,7 +179,7 @@ function parseQueryParams(searchParams: URLSearchParams): FilterOptions {
       });
     }
   });
-  
+
   return filterOptions;
 }
 
@@ -187,7 +187,7 @@ function parseQueryParams(searchParams: URLSearchParams): FilterOptions {
  * NextJS路由处理器生成器 - 基于IApiHandler自动生成NextJS API路由
  */
 export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: IApiHandler<T, BO>) {
-  
+
   /**
    * 处理GET请求 - 支持多种获取资源方式
    */
@@ -198,10 +198,10 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
       const page = searchParams.has('page') ? parseInt(searchParams.get('page') as string) : undefined;
       const pageSize = searchParams.has('pageSize') ? parseInt(searchParams.get('pageSize') as string) : undefined;
       const userId = searchParams.get('userId') || undefined;
-      
+
       // 解析URL中的所有查询参数作为一般过滤条件
       const queryFilters = parseQueryParams(searchParams);
-      
+
       // 判断是否有除id/page/pageSize/userId之外的过滤参数
       const hasFilters = Object.keys(queryFilters).length > 0;
 
@@ -322,13 +322,9 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
   async function PATCH(request: NextRequest) {
     try {
       const body = await request.json();
-      const { isBatch, ...data } = body;
+      const { ...data } = body;
 
-      if (isBatch) {
-        return handleBatchPatch(data as BatchPatchRequest<BO>);
-      } else {
-        return handleSinglePatch(data as PatchRequest<BO>);
-      }
+      return handleBatchPatch(data as BatchPatchRequest<BO>);
     } catch (error) {
       console.error('PATCH请求处理错误:', error);
       return createApiResponse(false, undefined, '处理请求时发生错误', 500);
@@ -358,11 +354,11 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
     try {
       const { searchParams } = new URL(request.url);
       const id = searchParams.get('id');
-      
+
       // 支持批量删除
       const idsParam = searchParams.get('ids');
       let ids: string[] = [];
-      
+
       if (idsParam) {
         try {
           ids = JSON.parse(idsParam);
