@@ -15,9 +15,10 @@ import {
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  SparklesIcon
+  SparklesIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { TaskSuggestionDialog } from "./task-suggestion-dialog";
 
 interface DailyPlanningStepsProps {
   onStartFocusing: () => void;
@@ -27,7 +28,6 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
   const [currentStep, setCurrentStep] = useState(1);
   const [isCompleted, setIsCompleted] = useState(false);
   const [intention, setIntention] = useState("");
-  const [aiGeneratedTodos, setAiGeneratedTodos] = useState<string[]>([]);
   const [updateExisting, setUpdateExisting] = useState(false);
   const [quadrantTasks, setQuadrantTasks] = useState({
     urgentImportant: "",
@@ -36,6 +36,12 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
     notUrgentNotImportant: ""
   });
   const [timeSchedule, setTimeSchedule] = useState("");
+  // 任务建议弹窗状态
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [generatedTasksData, setGeneratedTasksData] = useState<{
+    created: Array<{id?: string, title: string, description?: string, priority?: 'urgent' | 'high' | 'medium' | 'low', editing?: boolean, expanded?: boolean}>;
+    updated: Array<{id: string, title: string, description?: string, priority?: 'urgent' | 'high' | 'medium' | 'low', editing?: boolean, expanded?: boolean}>;
+  }>({ created: [], updated: [] });
 
   // 检查本地存储是否已经完成了今天的规划
   React.useEffect(() => {
@@ -134,18 +140,32 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
           throw new Error(data.error || '生成失败');
         }
         
-        // 提取生成的待办事项标题
-        const todoTitles = data.data.created.map(todo => todo.title);
+        // 为每个任务添加默认的优先级
+        const created = data.data.created?.map((todo: any) => ({
+          ...todo,
+          priority: todo.priority || 'medium',  // 默认中等优先级
+          expanded: false
+        })) || [];
         
-        // 如果有更新的待办事项，也显示这些
-        if (updateExisting && data.data.updated && data.data.updated.length > 0) {
-          const updatedTitles = data.data.updated.map(todo => `[更新] ${todo.title}`);
-          setAiGeneratedTodos([...todoTitles, ...updatedTitles]);
-          return { new: todoTitles.length, updated: updatedTitles.length };
-        } else {
-          setAiGeneratedTodos(todoTitles);
-          return { new: todoTitles.length, updated: 0 };
-        }
+        const updated = data.data.updated?.map((todo: any) => ({
+          ...todo,
+          priority: todo.priority || 'medium',  // 默认中等优先级
+          expanded: false
+        })) || [];
+        
+        // 存储完整的任务数据用于弹窗展示
+        setGeneratedTasksData({
+          created,
+          updated
+        });
+        
+        // 打开弹窗
+        setShowTaskDialog(true);
+        
+        const newTasksCount = data.data.created?.length || 0;
+        const updatedTasksCount = data.data.updated?.length || 0;
+        
+        return { new: newTasksCount, updated: updatedTasksCount };
       }),
       {
         loading: '正在使用AI生成任务清单...',
@@ -153,6 +173,108 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
         error: (err) => `生成失败: ${err.message}`
       }
     );
+  };
+  
+  // 处理创建/更新任务的函数
+  const handleSaveTasks = async () => {
+    const tasksToCreate = generatedTasksData.created.map(task => ({
+      title: task.title,
+      description: task.description,
+      priority: task.priority
+    }));
+    
+    const tasksToUpdate = generatedTasksData.updated.map(task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      priority: task.priority
+    }));
+    
+    // 发送创建/更新请求
+    try {
+      // 创建新任务
+      if (tasksToCreate.length > 0) {
+        const createResponse = await fetch('/api/todo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            isBatch: true,
+            data: tasksToCreate
+          }),
+        });
+        
+        if (!createResponse.ok) {
+          throw new Error('创建任务失败');
+        }
+      }
+      
+      // 更新现有任务
+      if (tasksToUpdate.length > 0) {
+        for (const task of tasksToUpdate) {
+          const updateResponse = await fetch(`/api/todo/${task.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: task.title,
+              description: task.description,
+              priority: task.priority
+            }),
+          });
+          
+          if (!updateResponse.ok) {
+            throw new Error(`更新任务 ${task.id} 失败`);
+          }
+        }
+      }
+      
+      toast.success(`已成功添加${tasksToCreate.length}个任务${tasksToUpdate.length > 0 ? `并更新${tasksToUpdate.length}个任务` : ''}`);
+      setShowTaskDialog(false);
+    } catch (error) {
+      console.error("保存任务失败:", error);
+      toast.error("保存任务失败，请重试");
+      throw error; // 重新抛出错误以便弹窗组件处理
+    }
+  };
+  
+  // 编辑任务字段
+  const handleEditTask = (index: number, isUpdated: boolean, field: string, value: any) => {
+    if (isUpdated) {
+      const updatedTasks = [...generatedTasksData.updated];
+      updatedTasks[index] = { ...updatedTasks[index], [field]: value };
+      setGeneratedTasksData({...generatedTasksData, updated: updatedTasks});
+    } else {
+      const createdTasks = [...generatedTasksData.created];
+      createdTasks[index] = { ...createdTasks[index], [field]: value };
+      setGeneratedTasksData({...generatedTasksData, created: createdTasks});
+    }
+  };
+  
+  // 删除任务
+  const handleRemoveTask = (index: number, isUpdated: boolean) => {
+    if (isUpdated) {
+      const updatedTasks = generatedTasksData.updated.filter((_, i) => i !== index);
+      setGeneratedTasksData({...generatedTasksData, updated: updatedTasks});
+    } else {
+      const createdTasks = generatedTasksData.created.filter((_, i) => i !== index);
+      setGeneratedTasksData({...generatedTasksData, created: createdTasks});
+    }
+  };
+  
+  // 切换编辑状态
+  const toggleEditing = (index: number, isUpdated: boolean) => {
+    if (isUpdated) {
+      const updatedTasks = [...generatedTasksData.updated];
+      updatedTasks[index].editing = !updatedTasks[index].editing;
+      setGeneratedTasksData({...generatedTasksData, updated: updatedTasks});
+    } else {
+      const createdTasks = [...generatedTasksData.created];
+      createdTasks[index].editing = !createdTasks[index].editing;
+      setGeneratedTasksData({...generatedTasksData, created: createdTasks});
+    }
   };
 
   const generateTimeSchedule = () => {
@@ -264,34 +386,23 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
                 className="min-h-[100px]"
               />
               
-              {aiGeneratedTodos.length > 0 ? (
-                <div className="bg-secondary/20 p-3 rounded-md space-y-2">
-                  <h4 className="font-medium">AI生成的任务建议:</h4>
-                  <ul className="list-disc pl-5 space-y-1">
-                    {aiGeneratedTodos.map((todo, index) => (
-                      <li key={index}>{todo}</li>
-                    ))}
-                  </ul>
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="update-existing"
+                    checked={updateExisting}
+                    onCheckedChange={setUpdateExisting}
+                  />
+                  <Label htmlFor="update-existing">同时更新今日现有待办</Label>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="update-existing"
-                      checked={updateExisting}
-                      onCheckedChange={setUpdateExisting}
-                    />
-                    <Label htmlFor="update-existing">同时更新今日现有待办</Label>
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={simulateAiGeneration}
-                  >
-                    <SparklesIcon className="mr-2 h-4 w-4" />
-                    AI生成任务建议
-                  </Button>
-                </div>
-              )}
+                <Button
+                  variant="outline"
+                  onClick={simulateAiGeneration}
+                >
+                  <SparklesIcon className="mr-2 h-4 w-4" />
+                  AI生成任务建议
+                </Button>
+              </div>
               
               <div className="flex justify-between">
                 <Button variant="outline" onClick={prevStep}>
@@ -383,7 +494,7 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
                 </Button>
               )}
               
-              <div className="flex justify-between">
+              <div className="flex justify之间">
                 <Button variant="outline" onClick={prevStep}>
                   <ChevronLeftIcon className="mr-2 h-4 w-4" />
                   返回
@@ -397,6 +508,18 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
           )}
         </div>
       </CardContent>
+      
+      {/* 使用提取的任务建议弹窗组件，添加成功回调 */}
+      <TaskSuggestionDialog
+        open={showTaskDialog}
+        onOpenChange={setShowTaskDialog}
+        generatedTasks={generatedTasksData}
+        onSave={handleSaveTasks}
+        onEdit={handleEditTask}
+        onRemove={handleRemoveTask}
+        onToggleEditing={toggleEditing}
+        onSuccess={nextStep} // 添加成功回调，自动进入下一步
+      />
     </Card>
   );
 }
