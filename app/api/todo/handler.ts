@@ -3,10 +3,10 @@ import { BaseApiHandler } from '../lib/BaseApiHandler';
 import { BusinessObject } from '../lib/types';
 import { TodoPromptBuilder, TodoOutputParser } from './prompt';
 import { TodoBO } from './types';
-import { convertToMidnight } from '@/lib/utils';
+import { convertToMidnight, getCurrentUserId } from '@/lib/utils';
 
 export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
-  protected validateInput(data: any): boolean {
+  validateBO(data: TodoBO): boolean {
     if (!data) return false;
 
     // title 是必需的
@@ -25,6 +25,29 @@ export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
     return true;
   }
 
+  setDefaultsBO(businessObject: Partial<TodoBO>, isUpdate: boolean): Partial<TodoBO> {
+    const now = new Date();
+
+    // 设置默认值
+    if (!isUpdate) {
+      businessObject.createdAt = now.toISOString();
+      businessObject.updatedAt = now.toISOString();
+      if (!businessObject.plannedDate) {
+        businessObject.plannedDate = now.toISOString();
+      }
+      // 设置默认的状态和优先级
+      if (!businessObject.status) {
+        businessObject.status = 'pending';
+      }
+      if (!businessObject.priority) {
+        businessObject.priority = 'medium';
+      }
+    } else {
+      businessObject.updatedAt = now.toISOString();
+    }
+    return businessObject;
+  }
+
   protected async getExistingData(id: string): Promise<TodoData> {
     const todo = await this.persistenceService.findById(id);
 
@@ -40,7 +63,7 @@ export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
     return '';
   }
 
-  protected resourceName(): string {
+  getResourceName(): string {
     return 'todo';
   }
 
@@ -63,8 +86,7 @@ export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
   }
 
   toDataObject(businessObject: TodoBO): Partial<TodoData> {
-    return {
-      id: businessObject.id,
+    let result = {
       user_id: businessObject.userId,
       title: businessObject.title,
       description: businessObject.description,
@@ -76,6 +98,10 @@ export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
       completed_at: businessObject.completedAt,
       tag_ids: businessObject.tagIds,
     };
+    if (businessObject.id && businessObject.id > 0) {
+      result["id"] = businessObject.id;
+    }
+    return result;
   }
 
   toBusinessObjects(dataObjects: TodoData[]): TodoBO[] {

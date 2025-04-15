@@ -6,7 +6,7 @@ export interface TodoBO extends BusinessObject {
   userId: string;
   title: string;
   description?: string;
-  status: 'active' | 'completed' | 'archived';
+  status: 'pending' | 'in_progress' | 'completed' | 'archived';
   priority: 'urgent' | 'high' | 'medium' | 'low';
   plannedDate?: string;
   plannedStartTime?: string;

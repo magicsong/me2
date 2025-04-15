@@ -19,22 +19,27 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { TaskSuggestionDialog } from "./task-suggestion-dialog";
+import { QuadrantPlanner } from "./quadrant-planner";
+import { TodoBO } from "@/app/api/todo/types";
 
 interface DailyPlanningStepsProps {
   onStartFocusing: () => void;
+  todos: TodoBO[]; // 添加todos属性
+  onUpdateTodo: (todo: TodoBO) => Promise<boolean>; // 添加更新todo的方法
+  onDataRefresh: () => void; // 修改为数据刷新回调
 }
 
-export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps) {
+export function DailyPlanningSteps({ 
+  onStartFocusing, 
+  todos, 
+  onUpdateTodo,
+  onDataRefresh 
+}: DailyPlanningStepsProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [isCompleted, setIsCompleted] = useState(false);
   const [intention, setIntention] = useState("");
   const [updateExisting, setUpdateExisting] = useState(false);
-  const [quadrantTasks, setQuadrantTasks] = useState({
-    urgentImportant: "",
-    notUrgentImportant: "",
-    urgentNotImportant: "",
-    notUrgentNotImportant: ""
-  });
+  // 保留时间安排相关状态
   const [timeSchedule, setTimeSchedule] = useState("");
   // 任务建议弹窗状态
   const [showTaskDialog, setShowTaskDialog] = useState(false);
@@ -236,7 +241,6 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
     } catch (error) {
       console.error("保存任务失败:", error);
       toast.error("保存任务失败，请重试");
-      throw error; // 重新抛出错误以便弹窗组件处理
     }
   };
   
@@ -420,46 +424,10 @@ export function DailyPlanningSteps({ onStartFocusing }: DailyPlanningStepsProps)
           {currentStep === 3 && (
             <div className="space-y-4">
               <h3 className="font-semibold">四象限规划</h3>
-              <p className="text-muted-foreground">按照优先级对任务进行分类</p>
+              <p className="text-muted-foreground">拖动任务到对应的象限，按照优先级进行分类</p>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <h4 className="text-sm font-medium mb-2">紧急且重要</h4>
-                  <Textarea
-                    placeholder="输入任务..."
-                    className="h-24"
-                    value={quadrantTasks.urgentImportant}
-                    onChange={(e) => setQuadrantTasks({...quadrantTasks, urgentImportant: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium mb-2">重要但不紧急</h4>
-                  <Textarea
-                    placeholder="输入任务..."
-                    className="h-24"
-                    value={quadrantTasks.notUrgentImportant}
-                    onChange={(e) => setQuadrantTasks({...quadrantTasks, notUrgentImportant: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium mb-2">紧急但不重要</h4>
-                  <Textarea
-                    placeholder="输入任务..."
-                    className="h-24"
-                    value={quadrantTasks.urgentNotImportant}
-                    onChange={(e) => setQuadrantTasks({...quadrantTasks, urgentNotImportant: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium mb-2">既不紧急也不重要</h4>
-                  <Textarea
-                    placeholder="输入任务..."
-                    className="h-24"
-                    value={quadrantTasks.notUrgentNotImportant}
-                    onChange={(e) => setQuadrantTasks({...quadrantTasks, notUrgentNotImportant: e.target.value})}
-                  />
-                </div>
-              </div>
+              {/* 使用新的四象限组件替换原来的文本框 */}
+              <QuadrantPlanner todos={todos} onUpdateTodo={onUpdateTodo} onRefresh={onDataRefresh} />
               
               <div className="flex justify-between">
                 <Button variant="outline" onClick={prevStep}>

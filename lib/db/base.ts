@@ -47,6 +47,15 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
     async createMany(data: Partial<I>[]): Promise<I[]> {
         let processedData = [...data];
         
+        // 移除所有数据中的 id 字段，让数据库自动生成
+        processedData = processedData.map(item => {
+            const newItem = {...item};
+            if ('id' in newItem) {
+                delete newItem.id;
+            }
+            return newItem;
+        });
+        
         if (this.hooks.beforeCreate) {
             processedData = await Promise.all(
                 processedData.map(item => Promise.resolve(this.hooks.beforeCreate!(item)))

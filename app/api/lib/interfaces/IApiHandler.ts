@@ -4,8 +4,13 @@ import { BaseRequest, BaseResponse, BusinessObject, FilterOptions, PatchRequest,
  * API处理器接口，定义API处理器应该具有的核心方法
  */
 export interface IApiHandler<T, BO extends BusinessObject = any> {
+
+    getResourceName(): string;
     // 处理创建请求 - 单个对象
     handleCreate(request: BaseRequest<BO>): Promise<BaseResponse<BO>>;
+
+    // 处理批量创建请求 - 使用专门的批量请求接口
+    handleBatchCreate(request: BaseBatchRequest<BO>): Promise<BaseResponse<BO[]>>;
     
     // 处理更新请求 - 单个对象
     handleUpdate(request: BaseRequest<BO>): Promise<BaseResponse<BO>>;

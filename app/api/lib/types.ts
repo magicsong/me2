@@ -8,6 +8,7 @@ export interface BaseRequest<T> {
   autoGenerate?: boolean; // 是否需要LLM自动生成
   batchSize?: number; // 自动生成时的批量大小
   userPrompt?: string; // 用户给大模型的提示
+  userId?: string; // 可选: 用户ID限制，确保只操作该用户的资源
 }
 
 /**
@@ -19,6 +20,7 @@ export interface BaseBatchRequest<T> {
   batchSize?: number; // 自动生成时的批量大小
   userPrompt?: string; // 用户给大模型的提示
   generateBothCreatedAndUpdated?: boolean; // 是否需要同时生成新建和更新的对象，如果是，必须传入data
+  userId?: string; // 可选: 用户ID限制，确保只操作该用户的资源
 }
 
 /**
@@ -119,6 +121,26 @@ export interface BusinessObject {
   id?: string | number;
   userId?: string;
   createdAt?: string;
+}
+
+/**
+ * 业务对象校验接口
+ */
+export interface ValidAndDefault<BO> {
+  /**
+   * 校验业务对象
+   * @param businessObject 业务对象
+   * @param isUpdate 是否为更新操作
+   * @throws Error 当验证失败时抛出错误
+   */
+  validateBO(businessObject: Partial<BO>, isUpdate: boolean): void;
+  /**
+   * 为业务对象填充默认值
+   * @param businessObject 业务对象
+   * @param isUpdate 是否为更新操作
+   * @returns 填充了默认值的业务对象
+   */
+  setDefaultsBO(businessObject: Partial<BO>, isUpdate: boolean): Partial<BO>;
 }
 
 /**

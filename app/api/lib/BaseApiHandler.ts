@@ -1,5 +1,9 @@
 import { callLLMOnce } from '@/lib/langchain/chains';
-import { BaseRequest, BaseResponse, BusinessObject, FilterOptions, ObjectConverter, OutputParser, PatchRequest, BatchPatchRequest, BaseBatchRequest, PromptBuilder } from './types';
+import {
+    BaseRequest, BaseResponse, BusinessObject,
+    FilterOptions, ObjectConverter, OutputParser, PatchRequest, BatchPatchRequest,
+    BaseBatchRequest, PromptBuilder, ValidAndDefault
+} from './types';
 import { IApiHandler } from './interfaces/IApiHandler';
 import { FilterCondition, PaginationOptions, PersistenceService } from '@/lib/db/intf';
 import { PromptTemplate } from '@langchain/core/prompts';
@@ -8,16 +12,12 @@ import { PromptTemplate } from '@langchain/core/prompts';
  * 通用API处理基类，实现IApiHandler接口
  */
 export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
-    implements ObjectConverter<BO, T>, IApiHandler<T, BO> {
+    implements ObjectConverter<BO, T>, IApiHandler<T, BO>, ValidAndDefault<BO> {
     constructor(
         protected persistenceService: PersistenceService<T>,
         protected promptBuilder: PromptBuilder<BO>,
         protected outputParser: OutputParser<BO>
     ) { }
-
-    // 抽象方法：验证输入
-    protected abstract validateInput(data: any): boolean;
-
     // 抽象方法：获取已存在数据（用于更新操作）
     protected abstract getExistingData(id: string): Promise<T>;
 
@@ -25,13 +25,19 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
     protected abstract generateId(): string;
 
     // 抽象方法：资源名称
-    protected abstract resourceName(): string;
+    protected abstract getResourceName(): string;
 
     // 业务对象和数据对象之间的转换抽象方法
     abstract toBusinessObject(dataObject: T): BO;
     abstract toDataObject(businessObject: BO): Partial<T>;
     abstract toBusinessObjects(dataObjects: T[]): BO[];
     abstract toDataObjects(businessObjects: BO[]): Partial<T>[];
+
+    // 抽象方法：校验业务对象
+    abstract validateBO(businessObject: Partial<BO>, isUpdate: boolean): void;
+
+    // 抽象方法：为业务对象设置默认值
+    abstract setDefaultsBO(businessObject: Partial<BO>, isUpdate: boolean): Partial<BO>;
 
     /**
      * 获取持久化服务实例
@@ -57,8 +63,22 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
         return this.outputParser;
     }
 
+    // 添加用户ID验证方法
+    protected validateUserId(userId?: string): boolean {
+        // 基础实现，子类可以覆盖此方法提供更复杂的验证逻辑
+        return !!userId;
+    }
+
+    // 确保数据对象包含用户ID
+    protected ensureUserIdInData(data: Partial<T>, userId?: string): Partial<T> {
+        if (userId) {
+            return { ...data, userId } as Partial<T>;
+        }
+        return data;
+    }
+
     /**
-     * 处理创建请求 - 使用业务对象
+     * 处理创建请求(单一) - 使用业务对象
      */
     async handleCreate(request: BaseRequest<BO>): Promise<BaseResponse<BO>> {
         try {
@@ -68,10 +88,29 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             }
 
             // 单一创建
-            if (!request.data || !this.validateInput(this.toDataObject(request.data))) {
+            if (!request.data) {
                 return { success: false, error: '提供的数据无效' };
             }
 
+            // 验证用户ID
+            if (request.userId && !this.validateUserId(request.userId)) {
+                return { success: false, error: '用户ID无效' };
+            }
+
+            try {
+                // 校验业务对象 - 失败时会抛出错误
+                this.validateBO(request.data, false);
+            } catch (validationError) {
+                return {
+                    success: false,
+                    error: validationError instanceof Error ? validationError.message : '数据验证失败'
+                };
+            }
+
+            // 设置默认值
+            request.data = this.setDefaultsBO(request.data, false) as BO;
+
+            request.data.userId = request.userId
             const dataObject = this.toDataObject(request.data);
             const createdItem = await this.persistenceService.create(dataObject as Partial<T>);
             // 转换回业务对象返回
@@ -80,6 +119,61 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             return {
                 success: false,
                 error: error instanceof Error ? error.message : '创建资源失败'
+            };
+        }
+    }
+
+    async handleBatchCreate(request: BaseBatchRequest<BO>): Promise<BaseResponse<BO[]>> {
+        try {
+            if (!request.data || request.data.length === 0) {
+                return { success: false, error: '批量创建需要提供数据数组' };
+            }
+
+            // 验证用户ID
+            if (request.userId && !this.validateUserId(request.userId)) {
+                return { success: false, error: '用户ID无效' };
+            }
+
+            // 批量校验所有对象
+            try {
+                for (const item of request.data) {
+                    this.validateBO(item, false);
+                }
+            } catch (validationError) {
+                return {
+                    success: false,
+                    error: validationError instanceof Error ? validationError.message : '数据验证失败'
+                };
+            }
+
+            // 设置默认值
+            request.data = request.data.map(item => this.setDefaultsBO(item, false)) as BO[];
+
+            // 批量创建
+            const dataObjectsWithUserId = request.data.map(item => {
+                // 确保每个数据对象都包含用户ID
+                if (request.userId) {
+                    item.userId = request.userId;
+                }
+                // 去掉id key
+                if ('id' in item) {
+                    delete item.id;
+                }
+                const dataObject = this.toDataObject(item);
+                return dataObject;
+            });
+            const dataObjects = this.toDataObjects(request.data);
+            // 确保每个数据对象都包含用户ID
+
+            const createdItems = await this.persistenceService.createMany(dataObjectsWithUserId as Partial<T>[]);
+
+            // 转换回业务对象返回
+            return { success: true, data: this.toBusinessObjects(createdItems) };
+        } catch (error) {
+            console.log('批量创建资源失败', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : '批量创建资源失败'
             };
         }
     }
@@ -94,7 +188,19 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 return { success: false, error: '更新操作需要提供ID' };
             }
 
-            let dataToUpdate = this.toDataObject(item);
+            try {
+                // 校验业务对象 - 失败时会抛出错误
+                this.validateBO(item, true);
+            } catch (validationError) {
+                return {
+                    success: false,
+                    error: validationError instanceof Error ? validationError.message : '数据验证失败'
+                };
+            }
+
+            // 设置默认值
+            const itemWithDefaults = this.setDefaultsBO(item, true) as BO;
+            let dataToUpdate = this.toDataObject(itemWithDefaults);
 
             // 使用LLM增强更新数据
             if (request.autoGenerate && request.userPrompt) {
@@ -136,8 +242,23 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 return { success: false, error: '没有提供有效的更新项目' };
             }
 
+            // 批量校验所有对象
+            try {
+                for (const item of itemsToUpdate) {
+                    this.validateBO(item, true);
+                }
+            } catch (validationError) {
+                return {
+                    success: false,
+                    error: validationError instanceof Error ? validationError.message : '数据验证失败'
+                };
+            }
+
+            // 设置默认值
+            const itemsWithDefaults = itemsToUpdate.map(item => this.setDefaultsBO(item, true)) as BO[];
+
             // 转换为数据对象数组
-            const dataObjectsToUpdate = itemsToUpdate.map(item => {
+            const dataObjectsToUpdate = itemsWithDefaults.map(item => {
                 const dataObj = this.toDataObject(item);
                 // 确保ID字段存在
                 dataObj.id = item.id;
@@ -183,8 +304,21 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 return { success: false, error: '无权更新此资源' };
             }
 
+            try {
+                // 校验字段
+                this.validateBO(request.fields, true);
+            } catch (validationError) {
+                return {
+                    success: false,
+                    error: validationError instanceof Error ? validationError.message : '数据验证失败'
+                };
+            }
+
+            // 设置默认值
+            const fieldsWithDefaults = this.setDefaultsBO(request.fields, true);
+
             // 将业务字段转换为数据字段
-            const dataFields = this.toDataObject(request.fields as any);
+            const dataFields = this.toDataObject(fieldsWithDefaults as any);
 
             // 更新指定字段
             const updatedItem = await this.persistenceService.update(request.id, dataFields);
@@ -336,12 +470,64 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                     result.updated = parsedResults.updated
                 }
             } else {
-                // 不支持parseBatchWithUpdates时直接报错
-                return {
-                    success: false,
-                    error: '当前解析器不支持批量生成和更新功能，请实现parseBatchWithUpdates方法',
-                    data: { created: [], updated: [] }
-                };
+                // 降级处理：如果没有parseBatchWithUpdates，则分别处理创建和更新
+
+                // 1. 处理新创建项
+                if (!generateBoth || result.created.length < batchSize) {
+                    const createCount = generateBoth ?
+                        Math.max(1, Math.floor(batchSize / 2)) : // 如果同时生成两种，则分配一半给创建
+                        batchSize; // 否则全部用于创建
+
+                    for (let i = 0; i < createCount; i++) {
+                        const prompt = this.promptBuilder.buildCreatePrompt();
+                        const llmOutput = await this.generateLLMContent(prompt, {
+                            userPrompt: `${request.userPrompt} (生成新的第${i + 1}个)`,
+                            isNew: true
+                        });
+
+                        const generatedData = this.outputParser.parseCreateOutput(llmOutput);
+                        const businessObject = this.toBusinessObject(generatedData as T);
+                        delete businessObject.id; // 确保没有ID
+                        result.created.push(businessObject);
+                    }
+                }
+
+                // 2. 处理更新项
+                if (generateBoth && request.data && Array.isArray(request.data)) {
+                    const updateCount = Math.min(
+                        request.data.length,
+                        Math.max(1, Math.floor(batchSize / 2)) // 最多更新一半的数量
+                    );
+
+                    for (let i = 0; i < updateCount; i++) {
+                        if (i >= request.data.length) break;
+
+                        const originalItem = request.data[i];
+                        if (!originalItem || !originalItem.id) continue;
+
+                        const prompt = this.promptBuilder.buildUpdatePrompt();
+                        const dataToUpdate = this.toDataObject(originalItem);
+
+                        const llmOutput = await this.generateLLMContent(prompt, {
+                            userPrompt: `${request.userPrompt} (更新第${i + 1}个)`,
+                            originalData: dataToUpdate
+                        });
+
+                        // 使用更新解析而不是创建解析
+                        const updatedData = this.outputParser.parseUpdateOutput(
+                            llmOutput,
+                            dataToUpdate as T
+                        );
+
+                        const businessObject = this.toBusinessObject({
+                            ...dataToUpdate,
+                            ...updatedData
+                        } as T);
+
+                        businessObject.id = originalItem.id; // 保留原始ID
+                        result.updated.push(businessObject);
+                    }
+                }
             }
 
             return {

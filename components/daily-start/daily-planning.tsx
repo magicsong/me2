@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,18 +36,15 @@ export function DailyPlanning({
     (todo) => todo.status !== "completed"
   );
 
-  // 获取今日任务的分类统计
-  let todayStats = {}
-  if (todos.length > 0) {
-    todayStats = {
-      total: todos.length,
-      completed: todos.filter((todo) => todo.status === "completed").length,
-      urgent: todos.filter((todo) => todo.priority === "urgent").length,
-      important: todos.filter((todo) => todo.priority === "high").length,
-      normal: todos.filter((todo) => todo.priority === "medium").length,
-      low: todos.filter((todo) => todo.priority === "low").length
-    };
-  }
+  // 使用useMemo获取今日任务的分类统计，确保todos变化时重新计算
+  const todayStats = useMemo(() => ({
+    total: todos.length,
+    completed: todos.filter((todo) => todo.status === "completed").length,
+    urgent: todos.filter((todo) => todo.priority === "urgent").length,
+    important: todos.filter((todo) => todo.priority === "high").length,
+    normal: todos.filter((todo) => todo.priority === "medium").length,
+    low: todos.filter((todo) => todo.priority === "low").length
+  }), [todos]);
 
 
   function handleSelectTodo(todoId: number, selected: boolean) {
@@ -243,8 +240,12 @@ export function DailyPlanning({
 
   return (
     <div className="space-y-6">
-      {/* 每日规划步骤组件 */}
-      <DailyPlanningSteps onStartFocusing={handleStartFocusing} />
+      {/* 每日规划步骤组件 - 传递todos和onDataRefresh */}
+      <DailyPlanningSteps 
+        onStartFocusing={handleStartFocusing} 
+        todos={todos}
+        onDataRefresh={onDataRefresh}
+      />
 
       {/* 待办事项管理 */}
       <Card>

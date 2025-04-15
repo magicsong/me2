@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { IApiHandler } from '../interfaces/IApiHandler';
-import { BaseRequest, BatchPatchRequest, BusinessObject, FilterOptions, PatchRequest } from '../types';
+import { BaseBatchRequest, BaseRequest, BatchPatchRequest, BusinessObject, FilterOptions, PatchRequest } from '../types';
+import { getCurrentUserId } from '@/lib/utils';
 
 /**
  * 创建标准API响应
@@ -193,11 +194,15 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
    */
   async function GET(request: NextRequest) {
     try {
+      const userId = await getCurrentUserId();
       const { searchParams } = new URL(request.url);
       const id = searchParams.get('id');
       const page = searchParams.has('page') ? parseInt(searchParams.get('page') as string) : undefined;
       const pageSize = searchParams.has('pageSize') ? parseInt(searchParams.get('pageSize') as string) : undefined;
-      const userId = searchParams.get('userId') || undefined;
+      
+      // 使用从身份验证获取的userId，而不是从参数中获取
+      const userIdFromParam = searchParams.get('userId') || undefined;
+      const effectiveUserId = userId || userIdFromParam;
 
       // 解析URL中的所有查询参数作为一般过滤条件
       const queryFilters = parseQueryParams(searchParams);
@@ -215,19 +220,19 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
         return createApiResponse(true, result);
       } else if (hasFilters && page !== undefined) {
         // 分页过滤获取
-        const result = await handler.getPageWithFilters(queryFilters, page, pageSize, userId);
+        const result = await handler.getPageWithFilters(queryFilters, page, pageSize, effectiveUserId);
         return createApiResponse(true, result);
       } else if (hasFilters) {
         // 过滤获取
-        const result = await handler.getWithFilters(queryFilters, userId);
+        const result = await handler.getWithFilters(queryFilters, effectiveUserId);
         return createApiResponse(true, result);
       } else if (page !== undefined) {
         // 分页获取
-        const result = await handler.getPage(page, pageSize, userId);
+        const result = await handler.getPage(page, pageSize, effectiveUserId);
         return createApiResponse(true, result);
       } else {
         // 获取所有资源
-        const result = await handler.getAll(userId);
+        const result = await handler.getAll(effectiveUserId);
         return createApiResponse(true, result);
       }
     } catch (error) {
@@ -241,22 +246,35 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
    */
   async function POST(request: NextRequest) {
     try {
+      const userId = await getCurrentUserId();
+      if (!userId) {
+        return createApiResponse(false, undefined, '用户未登录', 401);
+      }
+      
       const body = await request.json();
       const { isAIGeneration, isBatch, ...data } = body;
+
+      // 将userId注入到请求数据中
+      const dataWithUserId = { ...data, userId };
 
       if (isAIGeneration) {
         if (isBatch) {
           // AI批量生成
-          const response = await handler.generateBatchWithAI(data as BaseRequest<Partial<BO>>);
+          const response = await handler.generateBatchWithAI(dataWithUserId as BaseRequest<Partial<BO>>);
           return createApiResponse(true, response.data, response.error, response.success ? 200 : 400);
         } else {
           // AI单个生成
-          const response = await handler.generateWithAI(data as BaseRequest<Partial<BO>>);
+          const response = await handler.generateWithAI(dataWithUserId as BaseRequest<Partial<BO>>);
           return createApiResponse(true, response.data, response.error, response.success ? 200 : 400);
         }
       } else {
         // 普通创建
-        const response = await handler.handleCreate(data as BaseRequest<BO>);
+        if (isBatch) {
+          // 批量创建
+          const response = await handler.handleBatchCreate(dataWithUserId as BaseBatchRequest<BO>);
+          return createApiResponse(true, response.data, response.error, response.success ? 201 : 400);
+        }
+        const response = await handler.handleCreate(dataWithUserId as BaseRequest<BO>);
         return createApiResponse(true, response.data, response.error, response.success ? 201 : 400);
       }
     } catch (error) {
@@ -286,13 +304,17 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
    */
   async function PUT(request: NextRequest) {
     try {
+      const userId = await getCurrentUserId();
       const body = await request.json();
       const { isBatch, ...data } = body;
 
+      // 将userId注入到请求数据中
+      const dataWithUserId = { ...data, userId };
+
       if (isBatch) {
-        return handleBatchUpdate(data);
+        return handleBatchUpdate(dataWithUserId);
       } else {
-        return handleSingleUpdate(data as BaseRequest<BO>);
+        return handleSingleUpdate(dataWithUserId as BaseRequest<BO>);
       }
     } catch (error) {
       console.error('PUT请求处理错误:', error);
@@ -321,10 +343,14 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
    */
   async function PATCH(request: NextRequest) {
     try {
+      const userId = await getCurrentUserId();
       const body = await request.json();
       const { ...data } = body;
 
-      return handleBatchPatch(data as BatchPatchRequest<BO>);
+      // 将userId注入到请求数据中
+      const dataWithUserId = { ...data, userId };
+
+      return handleBatchPatch(dataWithUserId as BatchPatchRequest<BO>);
     } catch (error) {
       console.error('PATCH请求处理错误:', error);
       return createApiResponse(false, undefined, '处理请求时发生错误', 500);
@@ -352,6 +378,7 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
    */
   async function DELETE(request: NextRequest) {
     try {
+      const userId = await getCurrentUserId();
       const { searchParams } = new URL(request.url);
       const id = searchParams.get('id');
 
@@ -378,10 +405,13 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
         // 如果没有请求体，忽略错误
       }
 
+      // 注入用户ID到附加数据
+      const bodyWithUserId = { ...body, userId };
+
       if (ids.length > 0) {
-        return handleBatchDelete(ids, body);
+        return handleBatchDelete(ids, bodyWithUserId);
       } else if (id) {
-        return handleSingleDelete(id, body);
+        return handleSingleDelete(id, bodyWithUserId);
       } else {
         return createApiResponse(false, undefined, '缺少必要的id或ids参数', 400);
       }

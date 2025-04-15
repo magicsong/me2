@@ -26,9 +26,9 @@ function createApiResponse(success: boolean, data?: any, error?: string, status:
  * @returns 返回包含所有HTTP方法处理函数的对象
  */
 export function createSingleResourceRoute<T, BO extends BusinessObject>(
-  resourceName: string,
   handler: IApiHandler<T, BO>
 ) {
+  const resourceName = handler.getResourceName();
   /**
    * 获取单个资源
    */
@@ -117,7 +117,7 @@ export function createSingleResourceRoute<T, BO extends BusinessObject>(
    */
   async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
     try {
-      const id = params.id;
+      const { id } = await params;
       const body = await request.json();
       
       // 确保请求体中包含ID
@@ -135,7 +135,7 @@ export function createSingleResourceRoute<T, BO extends BusinessObject>(
    */
   async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
     try {
-      const id = params.id;
+      const { id } = await params;
       const body = await request.json();
       
       // 确保请求体中包含ID
@@ -153,7 +153,7 @@ export function createSingleResourceRoute<T, BO extends BusinessObject>(
    */
   async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
     try {
-      const id = params.id;
+      const { id } = await params;
       
       // 尝试从请求体中读取更多信息
       let body = {};

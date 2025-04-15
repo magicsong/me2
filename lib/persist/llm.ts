@@ -42,7 +42,7 @@ export async function saveLLMRecordToDB(
 ) {
     try {
         await db.insert(llm_cache_records).values({
-            requestHash,
+            request_hash: requestHash,
             prompt,
             model,
             response_content,
