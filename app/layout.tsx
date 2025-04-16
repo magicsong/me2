@@ -6,6 +6,8 @@ import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AuthProvider } from "@/components/providers/session-provider";
 import { Toaster } from 'sonner'
+import { PomodoroProvider } from './contexts/pomodoro-context';
+import { PomodoroReminder } from '@/components/pomodoro-reminder';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,11 +46,14 @@ export default function RootLayout({
             <AppSidebar variant="inset" />
             <SidebarInset>
               <SiteHeader />
-              <div className="flex flex-1 flex-col">
-                <div className="@container/main flex flex-1 flex-col gap-2">
-                  {children}
+              <PomodoroProvider>
+                <div className="flex flex-1 flex-col">
+                  <div className="@container/main flex flex-1 flex-col gap-2">
+                    {children}
+                  </div>
                 </div>
-              </div>
+                <PomodoroReminder />
+              </PomodoroProvider>
             </SidebarInset>
           </SidebarProvider>
         </AuthProvider>

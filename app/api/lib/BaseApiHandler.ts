@@ -7,6 +7,7 @@ import {
 import { IApiHandler } from './interfaces/IApiHandler';
 import { FilterCondition, PaginationOptions, PersistenceService } from '@/lib/db/intf';
 import { PromptTemplate } from '@langchain/core/prompts';
+import { th } from 'date-fns/locale';
 
 /**
  * 通用API处理基类，实现IApiHandler接口
@@ -15,17 +16,103 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
     implements ObjectConverter<BO, T>, IApiHandler<T, BO>, ValidAndDefault<BO> {
     constructor(
         protected persistenceService: PersistenceService<T>,
-        protected promptBuilder: PromptBuilder<BO>,
-        protected outputParser: OutputParser<BO>
+        protected promptBuilder?: PromptBuilder<BO> | undefined,
+        protected outputParser?: OutputParser<BO>
     ) { }
-    // 抽象方法：获取已存在数据（用于更新操作）
-    protected abstract getExistingData(id: string): Promise<T>;
+    /**
+     * 处理删除请求 - 通过ID删除单个资源
+     * @param request 包含id和可选userId的请求对象
+     * @returns 删除操作结果
+     */
+    async handleDelete(request: { id: string; userId?: string; [key: string]: any; }): Promise<BaseResponse<{ success: boolean; }>> {
+        try {
+            if (!request.id) {
+                return { success: false, error: '删除操作需要提供ID' };
+            }
 
+            // 如果提供了userId，则验证资源归属
+            if (request.userId) {
+                try {
+                    const existingItem = await this.getById(request.id);
+                    if (existingItem && (existingItem as any).userId !== request.userId) {
+                        return { success: false, error: '无权删除此资源' };
+                    }
+                } catch (error) {
+                    // 如果无法获取现有数据，继续尝试删除
+                    console.warn(`无法验证资源归属: ${error}`);
+                }
+            }
+
+            // 执行删除操作
+            const result = await this.persistenceService.delete(request.id);
+            
+            return { 
+                success: !!result, 
+                data: { success: !!result },
+                error: result ? undefined : `删除${this.getResourceName()}失败`
+            };
+        } catch (error) {
+            return {
+                success: false,
+                data: { success: false },
+                error: error instanceof Error ? error.message : `删除${this.getResourceName()}失败`
+            };
+        }
+    }
+
+    /**
+     * 处理批量删除请求 - 通过ID数组删除多个资源
+     * @param request 包含ids数组和可选userId的请求对象
+     * @returns 删除操作结果，包含成功状态和删除数量
+     */
+    async handleBatchDelete(request: { ids: string[]; userId?: string; [key: string]: any; }): Promise<BaseResponse<{ success: boolean; count: number; }>> {
+        try {
+            if (!request.ids || !Array.isArray(request.ids) || request.ids.length === 0) {
+                return { 
+                    success: false, 
+                    data: { success: false, count: 0 },
+                    error: '批量删除需要提供有效的ID数组' 
+                };
+            }
+
+            // 创建过滤条件
+            const filter: FilterCondition<T> = {
+                id: { in: request.ids as any }
+            } as FilterCondition<T>;
+
+            // 如果提供了userId限制，添加到过滤条件
+            if (request.userId) {
+                (filter as any).userId = request.userId;
+            }
+
+            // 执行批量删除操作
+            const count = await this.persistenceService.deleteMany(filter);
+            
+            return { 
+                success: count > 0, 
+                data: { 
+                    success: count > 0, 
+                    count: count 
+                },
+                error: count === 0 ? `未能删除任何${this.getResourceName()}` : undefined
+            };
+        } catch (error) {
+            return {
+                success: false,
+                data: { success: false, count: 0 },
+                error: error instanceof Error ? error.message : `批量删除${this.getResourceName()}失败`
+            };
+        }
+    }
+
+    protected supportAutoGenerate(): boolean { 
+        return this.promptBuilder !== undefined; 
+    }
     // 抽象方法：生成ID
-    protected abstract generateId(): string;
+    protected abstract generateId?(): string;
 
     // 抽象方法：资源名称
-    protected abstract getResourceName(): string;
+    abstract getResourceName(): string;
 
     // 业务对象和数据对象之间的转换抽象方法
     abstract toBusinessObject(dataObject: T): BO;
@@ -779,10 +866,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             };
         } catch (error) {
             console.error(`过滤查询${this.getResourceName()}失败:`, error);
-            return {
-                items: [],
-                total: 0
-            };
+            throw error;
         }
     }
 

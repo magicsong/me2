@@ -1,5 +1,5 @@
 import { tags, todo_tag_relations, todos } from '@/lib/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, and } from 'drizzle-orm';
 import { BaseRepository } from '../db';
 
 // Todo数据类型定义
@@ -153,8 +153,74 @@ export class TodoPersistenceService extends BaseRepository<typeof todos, TodoDat
       );
   }
 
-  // 为了兼容旧接口，添加getById方法
-  async getById(id: string | number): Promise<TodoData | null> {
-    return this.findById(id);
+  /**
+   * 向待办事项添加标签
+   * @param todoId 待办事项ID
+   * @param tagIds 标签ID数组
+   * @returns 操作成功的标签ID数组
+   */
+  async addTagsToTodo(todoId: number, tagIds: number[]): Promise<number[]> {
+    if (!tagIds.length) return [];
+
+    try {
+      // 获取已存在的关联关系，避免重复添加
+      const existingRelations = await this.db
+        .select({ tag_id: todo_tag_relations.tag_id })
+        .from(todo_tag_relations)
+        .where(and(
+          eq(todo_tag_relations.todo_id, todoId),
+          inArray(todo_tag_relations.tag_id, tagIds)
+        ));
+
+      const existingTagIds = existingRelations.map(rel => rel.tag_id);
+      
+      // 过滤出需要新添加的标签ID
+      const newTagIds = tagIds.filter(id => !existingTagIds.includes(id));
+      
+      if (newTagIds.length === 0) {
+        return tagIds; // 所有标签已存在，直接返回
+      }
+
+      // 构建待插入的数据
+      const relationData = newTagIds.map(tagId => ({
+        todo_id: todoId,
+        tag_id: tagId
+      }));
+
+      // 批量插入关联记录
+      await this.db.insert(todo_tag_relations).values(relationData);
+      
+      return tagIds;
+    } catch (error) {
+      console.error('添加标签关联时出错:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 从待办事项移除标签
+   * @param todoId 待办事项ID
+   * @param tagIds 标签ID数组
+   * @returns 是否操作成功
+   */
+  async removeTagsFromTodo(todoId: number, tagIds: number[]): Promise<boolean> {
+    if (!tagIds.length) return true;
+
+    try {
+      // 删除指定的关联关系
+      await this.db
+        .delete(todo_tag_relations)
+        .where(
+          and(
+            eq(todo_tag_relations.todo_id, todoId),
+            inArray(todo_tag_relations.tag_id, tagIds)
+          )
+        );
+      
+      return true;
+    } catch (error) {
+      console.error('移除标签关联时出错:', error);
+      throw error;
+    }
   }
 }

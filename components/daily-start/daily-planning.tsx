@@ -134,7 +134,31 @@ export function DailyPlanning({
       return false;
     }
   }
+  async function completeTodo(todoId: number): Promise<boolean> {
+    try {
+      const response = await fetch('/api/todo/' + todoId + '/complete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
+      const result = await response.json();
+      if (result.success) {
+        toast.success("待办事项已完成");
+        // Refresh the todo list after successful completion
+        onDataRefresh();
+        return true;
+      } else {
+        toast.error(result.error || "完成失败");
+        return false;
+      }
+    } catch (error) {
+      console.error("完成待办事项失败:", error);
+      toast.error("完成待办事项时出错");
+      return false;
+    }
+  }
   // 批量更新待办事项状态
   async function batchUpdateStatus(status: boolean, todoIds: string[]): Promise<boolean> {
     try {
@@ -222,17 +246,7 @@ export function DailyPlanning({
       setSelectedTodos([]);
     }
   }
-
-  async function handleSaveDailyIntention() {
-    try {
-      // 这里可以接入API保存日常意图
-      localStorage.setItem("dailyIntention", dailyIntention);
-      toast.success("保存成功");
-    } catch (error) {
-      toast.error("保存失败");
-    }
-  }
-
+  
   function handleStartFocusing() {
     // 进入时间轴视图
     onChangeTab();
@@ -518,6 +532,7 @@ export function DailyPlanning({
                                 selected={selectedTodos.includes(todo.id)}
                                 onSelect={(selected) => handleSelectTodo(todo.id, selected)}
                                 onUpdate={updateTodo}
+                                onComplete={completeTodo}
                               />
                             ))}
                           </div>

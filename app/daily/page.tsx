@@ -26,7 +26,6 @@ export default function DailyStartPage() {
     } else if (status === "authenticated") {
       fetchTodos();
       fetchYesterdayTodos();
-      fetchPomodoroSessions();
     }
   }, [status, router, selectedDate]);
 
@@ -86,21 +85,6 @@ export default function DailyStartPage() {
       }
     } catch (error) {
       console.error('获取昨日待办事项出错:', error);
-    }
-  }
-
-  async function fetchPomodoroSessions() {
-    try {
-      const response = await fetch(`/api/pomodoro?date=${selectedDate.toISOString()}`);
-      const result = await response.json();
-
-      if (result.success) {
-        setPomodoroSessions(result.data);
-      } else {
-        console.error('获取番茄钟会话失败:', result.error);
-      }
-    } catch (error) {
-      console.error('获取番茄钟会话出错:', error);
     }
   }
 
@@ -169,31 +153,6 @@ export default function DailyStartPage() {
     }
   }
 
-  async function handleBatchUpdateTodos(todos: Todo[]) {
-    try {
-      const response = await fetch('/api/todo/batch', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ todos }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        toast.success("批量更新成功");
-        fetchTodos(); // 重新获取待办事项
-        return true;
-      } else {
-        toast.error("批量更新失败", { description: result.error });
-        return false;
-      }
-    } catch (error) {
-      console.error('批量更新待办事项出错:', error);
-      toast.error("批量更新出错");
-      return false;
-    }
-  }
-
   // 用于刷新今日和昨日的待办事项数据
   function handleDataRefresh() {
     fetchTodos();
@@ -224,7 +183,6 @@ export default function DailyStartPage() {
             todos={todos}
             yesterdayTodos={todosYesterday}
             onUpdateTodo={handleUpdateTodo}
-            onBatchUpdateTodos={handleBatchUpdateTodos}
             onChangeTab={() => setActiveTab("timeline")}
             onDataRefresh={handleDataRefresh}
           />

@@ -2,8 +2,7 @@ import { TodoData, TodoPersistenceService } from '@/lib/persist/todo';
 import { BaseApiHandler } from '../lib/BaseApiHandler';
 import { BusinessObject } from '../lib/types';
 import { TodoPromptBuilder, TodoOutputParser } from './prompt';
-import { TodoBO } from './types';
-import { convertToMidnight, getCurrentUserId } from '@/lib/utils';
+import { TodoBO } from '../types';
 
 export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
   validateBO(data: TodoBO): boolean {

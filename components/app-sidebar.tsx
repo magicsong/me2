@@ -48,6 +48,11 @@ const data = {
       icon: IconSun,
     },
     {
+      title: "Todo",
+      url: "/todo",
+      icon: IconListDetails,
+    },
+    {
       title: "Dashboard",
       url: "/dashboard",
       icon: IconDashboard,

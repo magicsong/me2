@@ -1,0 +1,62 @@
+/* 完成任务的动画效果 */
+@keyframes todoComplete {
+  0% {
+    background-color: transparent;
+    transform: scale(1);
+  }
+  30% {
+    background-color: rgba(34, 197, 94, 0.2); /* 淡绿色背景 */
+  }
+  60% {
+    text-decoration: line-through;
+    color: rgba(107, 114, 128, 0.8); /* 灰色文字 */
+  }
+  100% {
+    background-color: rgba(34, 197, 94, 0.15);
+    transform: scale(0.98);
+    text-decoration: line-through;
+    color: rgba(107, 114, 128, 0.7);
+  }
+}
+
+.todo-completing {
+  animation: todoComplete 0.6s ease-in-out forwards;
+  pointer-events: none;
+}
+
+/* 勾选图标动画 */
+@keyframes checkmarkAppear {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-45deg);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2) rotate(-45deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(-45deg);
+  }
+}
+
+.todo-completing .checkmark {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+}
+
+.todo-completing .checkmark:after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 4px;
+  border-left: 2px solid #22c55e;
+  border-bottom: 2px solid #22c55e;
+  transform-origin: left bottom;
+  animation: checkmarkAppear 0.4s ease-in-out 0.2s forwards;
+  opacity: 0;
+  top: 5px;
+  left: 3px;
+}
