@@ -75,6 +75,58 @@ export class TodoPromptBuilder implements PromptBuilder<TodoBO> {
     回复格式必须为严格的JSON对象，仅包含需要更新的字段。
     `);
   }
+
+  /**
+   * 任务规划的提示模板
+   */
+  buildPlanPrompt(): PromptTemplate {
+    return PromptTemplate.fromTemplate(`
+    您是一位专业的个人时间管理助手。请根据用户提供的信息和当天的待办事项，为用户规划一天的时间安排。
+    
+    用户的规划请求: {userPrompt}
+    
+    当天的待办事项列表:
+    {todayTasks}
+    
+    请按照以下要求生成一个合理的时间规划:
+    1. 考虑任务的优先级（priority字段: urgent > high > medium > low）
+    2. 考虑任务的描述和可能的时间要求
+    3. 安排合理的休息时间
+    4. 如果任务已经有planned_start_time和planned_end_time，优先使用这些时间
+    5. 如果时间不足，请根据优先级调整或建议延期低优先级任务
+    
+    您的回复必须是严格的JSON格式，包含以下结构:
+    {{
+      "schedule": [
+        {{
+          "taskId": "任务ID",
+          "title": "任务标题",
+          "startTime": "开始时间（24小时制，如 09:00）",
+          "endTime": "结束时间（24小时制，如 10:30）",
+          "duration": "持续时间（分钟）",
+          "notes": "关于该时间段安排的说明或建议"
+        }}
+      ],
+      "breaks": [
+        {{
+          "startTime": "休息开始时间",
+          "endTime": "休息结束时间",
+          "type": "休息类型，如'lunch', 'coffee', 'rest'"
+        }}
+      ],
+      "summary": "对整体规划的总结和建议",
+      "unscheduled": [
+        {{
+          "taskId": "未能安排的任务ID",
+          "title": "未能安排的任务标题",
+          "reason": "未能安排的原因"
+        }}
+      ]
+    }}
+    
+    请确保JSON格式正确，所有时间采用24小时制，并考虑到一天的实际可用时间。如无特殊说明，假设工作时间为{timeRange}。
+    `);
+  }
 }
 
 export class TodoOutputParser implements OutputParser<TodoBO> {

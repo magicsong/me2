@@ -344,12 +344,14 @@ export function createNextRouteHandlers<T, BO extends BusinessObject>(handler: I
   async function PATCH(request: NextRequest) {
     try {
       const userId = await getCurrentUserId();
+      if (!userId) {
+        return createApiResponse(false, undefined, '用户未登录', 401);
+      }
       const body = await request.json();
       const { ...data } = body;
 
       // 将userId注入到请求数据中
       const dataWithUserId = { ...data, userId };
-
       return handleBatchPatch(dataWithUserId as BatchPatchRequest<BO>);
     } catch (error) {
       console.error('PATCH请求处理错误:', error);

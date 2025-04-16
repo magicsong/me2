@@ -46,7 +46,7 @@ export function TodoItem({ todo, tags, selected, onSelect, onUpdate }: TodoItemP
     try {
       const updatedTodo = {
         ...todo,
-        planned_date: new Date().toISOString().split('T')[0] // 设置为今天
+        planned_date: new Date().toISOString() // 设置为今天
       };
 
       await onUpdate(updatedTodo);

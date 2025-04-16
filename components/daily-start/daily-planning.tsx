@@ -99,7 +99,7 @@ export function DailyPlanning({
   }
 
   // 批量更新待办事项字段
-  async function batchUpdateField(field: string, updates: { id: string; value: any }[]): Promise<boolean> {
+  async function batchUpdateField(field: string, updates: { id: number; value: any }[]): Promise<boolean> {
     try {
       // 提取所有ID
       const ids = updates.map(update => update.id);
@@ -176,7 +176,7 @@ export function DailyPlanning({
       .filter((todo) => selectedTodos.includes(todo.id))
       .map((todo) => ({
         id: todo.id,
-        value: new Date().toISOString().split('T')[0] // 设置为今天
+        value: new Date().toISOString()
       }));
 
     // 更新计划日期

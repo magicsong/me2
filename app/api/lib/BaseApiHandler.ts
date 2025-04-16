@@ -341,9 +341,12 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             if (!request.id || request.id.length === 0) {
                 return { success: false, error: '批量更新操作需要提供ID列表' };
             }
-
-            // 将业务字段转换为数据字段
-            const dataFields = this.toDataObject(request.fields as any);
+            // 将业务字段转换为数据字段 - 只转换字段名称，避免引入多余字段
+            const dataFields: Partial<T> = {};
+            for (const [key, value] of Object.entries(request.fields)) {
+                const dbFieldName = this.convertFieldName(key);
+                dataFields[dbFieldName as keyof T] = value as any;
+            }
 
             // 创建过滤条件
             const filter: FilterCondition<T> = {
@@ -352,11 +355,11 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
 
             // 如果提供了userId限制
             if (request.userId) {
-                (filter as any).userId = request.userId;
+                (filter as any).user_id = request.userId;
             }
 
             // 使用patchMany方法批量更新
-            const updatedItems = await this.persistenceService.patchMany(filter, dataFields as Partial<T>);
+            const updatedItems = await this.persistenceService.patchMany(filter, dataFields);
 
             // 转换回业务对象返回
             return { success: true, data: this.toBusinessObjects(updatedItems) };
@@ -589,7 +592,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
      * 调用LLM生成内容
      */
     protected async generateLLMContent(prompt: PromptTemplate, context: any): Promise<string> {
-        const cacheKey = this.resourceName() + "-" + JSON.stringify(context);
+        const cacheKey = this.getResourceName() + "-" + JSON.stringify(context);
         const llmResponse = await callLLMOnce(prompt, context, cacheKey);
         return llmResponse.content as string;
     }
@@ -614,7 +617,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             const prompt = this.promptBuilder.build();
 
             // 生成内容
-            const cacheKey = this.resourceName() + "-zero-param-" + JSON.stringify(context || {});
+            const cacheKey = this.getResourceName() + "-zero-param-" + JSON.stringify(context || {});
             const llmResponse = await callLLMOnce(prompt, context || {}, cacheKey);
 
             // 解析内容
@@ -648,7 +651,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             const item = await this.persistenceService.findById(id);
             return item ? this.toBusinessObject(item) : null;
         } catch (error) {
-            console.error(`获取${this.resourceName()}失败:`, error);
+            console.error(`获取${this.getResourceName()}失败:`, error);
             return null;
         }
     }
@@ -667,7 +670,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             }
             return this.toBusinessObjects(items);
         } catch (error) {
-            console.error(`获取所有${this.resourceName()}失败:`, error);
+            console.error(`获取所有${this.getResourceName()}失败:`, error);
             return [];
         }
     }
@@ -738,7 +741,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 };
             }
         } catch (error) {
-            console.error(`分页获取${this.resourceName()}失败:`, error);
+            console.error(`分页获取${this.getResourceName()}失败:`, error);
             return {
                 items: [],
                 total: 0,
@@ -762,7 +765,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
         try {
             // 检查持久化服务是否支持过滤查询
             if (typeof this.persistenceService.getWithFilters !== 'function') {
-                throw new Error(`${this.resourceName()}持久化服务不支持过滤查询`);
+                throw new Error(`${this.getResourceName()}持久化服务不支持过滤查询`);
             }
 
             const dbFilters = this.convertFilters(filters)
@@ -775,7 +778,7 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
                 metadata: result.metadata
             };
         } catch (error) {
-            console.error(`过滤查询${this.resourceName()}失败:`, error);
+            console.error(`过滤查询${this.getResourceName()}失败:`, error);
             return {
                 items: [],
                 total: 0
@@ -841,9 +844,9 @@ export abstract class BaseApiHandler<T, BO extends BusinessObject = any>
             }
 
             // 如果两种过滤方法都不支持，则抛出错误
-            throw new Error(`${this.resourceName()}持久化服务不支持过滤查询`);
+            throw new Error(`${this.getResourceName()}持久化服务不支持过滤查询`);
         } catch (error) {
-            console.error(`分页过滤查询${this.resourceName()}失败:`, error);
+            console.error(`分页过滤查询${this.getResourceName()}失败:`, error);
             return {
                 items: [],
                 total: 0,
