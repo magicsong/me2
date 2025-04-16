@@ -15,3 +15,4 @@ export interface Habit {
 }
 
 export type HabitCategory = 'health' | 'productivity' | 'mindfulness' | 'learning' | 'social';
+

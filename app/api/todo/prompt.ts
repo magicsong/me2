@@ -95,7 +95,7 @@ export class TodoPromptBuilder implements PromptBuilder<TodoBO> {
     4. 如果任务已经有planned_start_time和planned_end_time，优先使用这些时间
     5. 如果时间不足，请根据优先级调整或建议延期低优先级任务
     
-    您的回复必须是严格的JSON格式，包含以下结构:
+    您的回复必须是严格的JSON格式，不允许擅自自行转义，包含以下结构:
     {{
       "schedule": [
         {{

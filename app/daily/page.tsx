@@ -45,7 +45,7 @@ export default function DailyStartPage() {
       // 获取选中日期的0点时间
       const startOfDay = new Date(selectedDate);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       // 获取选中日期的23:59:59时间
       const endOfDay = new Date(selectedDate);
       endOfDay.setHours(23, 59, 59, 999);
@@ -54,11 +54,10 @@ export default function DailyStartPage() {
       const response = await fetch(
         `/api/todo?plannedDate_gte=${startOfDay.toISOString()}&plannedDate_lte=${endOfDay.toISOString()}`
       );
-      
+
       const result = await response.json();
 
       if (result.success) {
-        console.log(result.data)
         setTodos(result.data as TodoBO[]);
       } else {
         console.error('获取待办事项失败:', result.error);
@@ -105,12 +104,12 @@ export default function DailyStartPage() {
     }
   }
 
-  async function handleUpdateTodo(todo: Todo) {
+  async function handleUpdateTodo(todo: Partial<TodoBO>) {
     try {
-      const response = await fetch('/api/todo', {
+      const response = await fetch('/api/todo/' + todo.id, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: todo }),
+        body: JSON.stringify({data:todo}),
       });
 
       const result = await response.json();
@@ -119,7 +118,7 @@ export default function DailyStartPage() {
         // 更新本地状态
         setTodos(prevTodos =>
           prevTodos.map(item =>
-            item.todo.id === todo.id ? { ...item, todo: result.data } : item
+            item.id === todo.id ? { ...item, todo: result.data } : item
           )
         );
         toast.success("更新成功");
@@ -136,14 +135,10 @@ export default function DailyStartPage() {
   }
 
   async function handleUpdateTodoTime(todoId: number, startTime: string, endTime: string) {
-    const todoToUpdate = todos.find(item => item.todo.id === todoId)?.todo;
-
-    if (!todoToUpdate) return;
-
     const updatedTodo = {
-      ...todoToUpdate,
-      planned_start_time: startTime,
-      planned_end_time: endTime
+      id: todoId,
+      plannedStartTime: startTime,
+      plannedEndTime: endTime
     };
 
     return handleUpdateTodo(updatedTodo);
