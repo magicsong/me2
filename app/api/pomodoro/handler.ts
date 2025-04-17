@@ -88,7 +88,7 @@ export class PomodoroApiHandler extends BaseApiHandler<PomodoroData, PomodoroBO>
   }
 
   toDataObject(businessObject: PomodoroBO): Partial<PomodoroData> {
-    let result = {
+    const result = {
       user_id: businessObject.userId,
       title: businessObject.title,
       description: businessObject.description,

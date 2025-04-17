@@ -49,7 +49,7 @@ export class TagApiHandler extends BaseApiHandler<TagData, TagBO> {
   }
 
   toDataObject(businessObject: TagBO): Partial<TagData> {
-    let result = {
+    const result = {
       name: businessObject.name,
       color: businessObject.color,
       userId: businessObject.userId,

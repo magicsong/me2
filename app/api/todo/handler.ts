@@ -85,7 +85,7 @@ export class TodoApiHandler extends BaseApiHandler<TodoData, TodoBO> {
   }
 
   toDataObject(businessObject: TodoBO): Partial<TodoData> {
-    let result = {
+    const result = {
       user_id: businessObject.userId,
       title: businessObject.title,
       description: businessObject.description,
