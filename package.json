@@ -54,6 +54,7 @@
     "openai": "^4.92.0",
     "pg": "^8.14.1",
     "react": "^19.0.0",
+    "react-countdown-circle-timer": "^3.2.1",
     "react-day-picker": "8.10.1",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",

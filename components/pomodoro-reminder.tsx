@@ -14,7 +14,7 @@ export function PomodoroReminder() {
   const { activePomodoro, completePomodoro } = usePomodoro();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasPlayedRef = useRef<boolean>(false); // 跟踪当前番茄钟的音频是否已播放
-
+  const router = useRouter(); // 在顶层调用 useRouter
   // 格式化时间
   const formatTime = useCallback((ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -94,7 +94,7 @@ export function PomodoroReminder() {
           size="sm"
           variant="ghost"
           className="ml-2 flex items-center gap-1"
-          onClick={() => useRouter().push('/pomodoro')}
+          onClick={() => router.push('/pomodoro')}
           title="前往番茄钟页面"
         >
           查看<ArrowRight size={14} />
@@ -114,7 +114,7 @@ export function PomodoroReminder() {
           size="sm"
           variant="ghost"
           className="ml-auto flex items-center gap-1"
-          onClick={() => useRouter().push('/pomodoro')}
+          onClick={() => router.push('/pomodoro')}
           title="前往番茄钟页面"
         >
           查看<ArrowRight size={14} />
