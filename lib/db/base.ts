@@ -154,7 +154,7 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
 
     // 更新记录
     async update(id: string | number, data: Partial<I>): Promise<I> {
-        let result = await this._update(id, data);
+        const result = await this._update(id, data);
         if (!result) {
             throw new Error(`记录 ${id} 不存在`);
         }
@@ -209,11 +209,10 @@ export class BaseRepository<T extends PgTableWithColumns<any>, I extends Record<
             filter = await Promise.resolve(this.hooks.beforeQuery(filter));
         }
 
-        let processedData = { ...data };
         const condition = this.buildWhereCondition(filter);
         const result = await this.db
             .update(this.table)
-            .set(processedData as any)
+            .set(data as any)
             .where(condition)
             .returning();
 

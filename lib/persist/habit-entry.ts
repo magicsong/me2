@@ -227,7 +227,7 @@ export class HabitEntryService implements PersistenceService<HabitEntry> {
     
     // 计算完成率（最近30天）
     const thirtyDaysAgo = subDays(new Date(), 30);
-    let daysInPeriod = 30;
+    const daysInPeriod = 30;
     
     const checkInsInLast30Days = uniqueDates.filter(date => 
       new Date(date) >= thirtyDaysAgo

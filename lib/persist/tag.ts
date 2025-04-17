@@ -130,7 +130,7 @@ export class TagPersistenceService extends BaseRepository<typeof tags, TagData> 
      * @returns 标签数组
      */
     async findByIds(ids: number[], userId?: string): Promise<TagData[]> {
-        let query: any = { id: { in: ids } };
+        const query: any = { id: { in: ids } };
 
         // 如果提供了用户ID，确保只返回该用户的标签
         if (userId) {
